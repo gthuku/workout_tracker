@@ -1,73 +1,143 @@
-# React + TypeScript + Vite
+# Workout Log
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A full-stack workout tracking application for logging exercises, tracking personal records, and monitoring fitness progress.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Multi-Profile Support** - Create and switch between multiple user profiles
+- **Exercise Library** - 72 pre-loaded exercises across 11 muscle groups + custom exercises
+- **Workout Logging** - Track sets, reps, and weight in real-time or log past workouts
+- **Personal Records** - Automatic PR detection with celebration animations
+- **Progress Analytics** - Training frequency visualization, muscle group distribution, streak tracking
+- **Gender-Specific Body Diagrams** - Visual representation of muscle training frequency
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| Layer | Technology |
+|-------|------------|
+| Frontend | React 19, TypeScript, Vite |
+| Styling | Tailwind CSS |
+| State | Zustand |
+| Routing | React Router |
+| Charts | Recharts |
+| Backend | Express 5 |
+| Database | PostgreSQL |
 
-## Expanding the ESLint configuration
+## Prerequisites
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Node.js 18+
+- PostgreSQL 14+
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Getting Started
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+### 1. Install dependencies
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2. Set up PostgreSQL
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+Create the database:
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+createdb workout_db
 ```
+
+The schema and seed data are automatically created on first server start.
+
+### 3. Configure database connection (optional)
+
+Default connection uses localhost. Override with environment variables if needed:
+
+```bash
+export PGHOST=localhost
+export PGPORT=5432
+export PGDATABASE=workout_db
+export PGUSER=your_username
+export PGPASSWORD=your_password
+```
+
+### 4. Start development servers
+
+```bash
+npm run dev
+```
+
+This starts both the Vite frontend (port 5173) and Express backend (port 3001).
+
+## Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start frontend + backend concurrently |
+| `npm run dev:client` | Start frontend only (Vite) |
+| `npm run dev:server` | Start backend only (Express) |
+| `npm run build` | Production build |
+| `npm run preview` | Preview production build |
+
+## Project Structure
+
+```
+src/
+├── api/client.ts          # API client with typed endpoints
+├── store/workoutStore.ts  # Zustand store for workout state
+├── types/index.ts         # TypeScript interfaces
+├── components/            # Reusable UI components
+│   ├── ExerciseSelector.tsx
+│   ├── ProfileSelector.tsx
+│   └── Layout.tsx
+└── pages/                 # Route pages
+    ├── Dashboard.tsx
+    ├── ActiveWorkout.tsx
+    ├── LogPastWorkout.tsx
+    ├── ExerciseLibrary.tsx
+    ├── WorkoutHistory.tsx
+    ├── Stats.tsx
+    └── Profile.tsx
+
+server/
+├── index.ts               # Express API routes
+├── database.ts            # PostgreSQL setup
+└── seed.ts                # Exercise seed data
+```
+
+## API Endpoints
+
+### Profiles
+- `GET /api/profiles` - List all profiles
+- `POST /api/profiles` - Create profile
+- `DELETE /api/profiles/:id` - Delete profile
+
+### User
+- `GET /api/user` - Get current user
+- `PUT /api/user/profile` - Update profile
+
+### Exercises
+- `GET /api/exercises` - List exercises (supports `?search=`, `?muscleGroup=`, `?equipment=`)
+- `POST /api/exercises` - Create custom exercise
+- `GET /api/exercises/:id/history` - Exercise history
+- `GET /api/exercises/:id/previous` - Previous session data
+
+### Workouts
+- `GET /api/workouts` - List completed workouts
+- `POST /api/workouts` - Create workout
+- `GET /api/workouts/active` - Get active workout
+- `GET /api/workouts/:id` - Get workout details
+- `PATCH /api/workouts/:id` - Update workout
+- `DELETE /api/workouts/:id` - Delete workout
+- `DELETE /api/workouts` - Clear all workouts
+
+### Sets
+- `POST /api/workouts/:id/sets` - Add set
+- `PATCH /api/sets/:id` - Update set
+- `DELETE /api/sets/:id` - Delete set
+
+### Stats
+- `GET /api/dashboard` - Dashboard data
+- `GET /api/stats/muscle-groups` - Muscle group distribution
+- `GET /api/personal-records` - Recent PRs
+
+## License
+
+MIT
