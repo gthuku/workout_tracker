@@ -1,0 +1,923 @@
+import express from 'express';
+import cors from 'cors';
+import db, { initializeDatabase } from './database.js';
+import { seedExercises, createDefaultUser } from './seed.js';
+import { v4 as uuidv4 } from 'uuid';
+
+const app = express();
+const PORT = 3001;
+
+app.use(cors());
+app.use(express.json());
+
+// Helper to get user ID from header or default
+async function getUserId(req: express.Request): Promise<string> {
+  const userId = req.headers['x-user-id'] as string;
+  if (userId) return userId;
+  // Fallback to first user
+  const firstUser = await db.queryOne('SELECT id FROM users ORDER BY created_at LIMIT 1');
+  return firstUser?.id || '';
+}
+
+// ============ USER ROUTES ============
+
+// List all profiles
+app.get('/api/profiles', async (req, res) => {
+  try {
+    const profiles = await db.query('SELECT * FROM users ORDER BY created_at');
+    res.json(profiles.map((user: any) => ({
+      id: user.id,
+      username: user.username,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      age: user.age,
+      heightFeet: user.height_feet,
+      heightInches: user.height_inches,
+      bodyWeight: user.body_weight,
+      fitnessGoal: user.fitness_goal,
+      experienceLevel: user.experience_level,
+      bio: user.bio,
+      createdAt: user.created_at,
+    })));
+  } catch (error) {
+    console.error('Error fetching profiles:', error);
+    res.status(500).json({ error: 'Failed to fetch profiles' });
+  }
+});
+
+// Create new profile
+app.post('/api/profiles', async (req, res) => {
+  const { username, displayName } = req.body;
+  const id = uuidv4();
+
+  try {
+    await db.execute(
+      `INSERT INTO users (id, username, preferred_unit, display_name)
+       VALUES ($1, $2, 'lbs', $3)`,
+      [id, username, displayName || username]
+    );
+
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [id]);
+    res.json({
+      id: user.id,
+      username: user.username,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      createdAt: user.created_at,
+    });
+  } catch (error: any) {
+    if (error.code === '23505') { // Unique constraint violation
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+    console.error('Error creating profile:', error);
+    res.status(500).json({ error: 'Failed to create profile' });
+  }
+});
+
+// Delete profile
+app.delete('/api/profiles/:id', async (req, res) => {
+  const profileId = req.params.id;
+
+  try {
+    // Delete all related data first
+    await db.execute('DELETE FROM personal_records WHERE user_id = $1', [profileId]);
+    await db.execute(
+      'DELETE FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = $1)',
+      [profileId]
+    );
+    await db.execute('DELETE FROM workouts WHERE user_id = $1', [profileId]);
+    await db.execute('DELETE FROM exercises WHERE user_id = $1', [profileId]);
+    await db.execute('DELETE FROM users WHERE id = $1', [profileId]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting profile:', error);
+    res.status(500).json({ error: 'Failed to delete profile' });
+  }
+});
+
+app.get('/api/user', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({
+      id: user.id,
+      username: user.username,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      age: user.age,
+      heightFeet: user.height_feet,
+      heightInches: user.height_inches,
+      bodyWeight: user.body_weight,
+      fitnessGoal: user.fitness_goal,
+      experienceLevel: user.experience_level,
+      gender: user.gender,
+      bio: user.bio,
+      createdAt: user.created_at,
+    });
+  } catch (error) {
+    console.error('Error fetching user:', error);
+    res.status(500).json({ error: 'Failed to fetch user' });
+  }
+});
+
+app.patch('/api/user', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { preferredUnit } = req.body;
+    await db.execute('UPDATE users SET preferred_unit = $1 WHERE id = $2', [preferredUnit, userId]);
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    res.json(user);
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ error: 'Failed to update user' });
+  }
+});
+
+app.put('/api/user/profile', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const {
+      displayName,
+      age,
+      heightFeet,
+      heightInches,
+      bodyWeight,
+      fitnessGoal,
+      experienceLevel,
+      gender,
+      bio,
+      preferredUnit,
+    } = req.body;
+
+    await db.execute(
+      `UPDATE users SET
+        display_name = $1,
+        age = $2,
+        height_feet = $3,
+        height_inches = $4,
+        body_weight = $5,
+        fitness_goal = $6,
+        experience_level = $7,
+        gender = $8,
+        bio = $9,
+        preferred_unit = $10
+      WHERE id = $11`,
+      [
+        displayName || null,
+        age || null,
+        heightFeet || null,
+        heightInches || null,
+        bodyWeight || null,
+        fitnessGoal || null,
+        experienceLevel || null,
+        gender || null,
+        bio || null,
+        preferredUnit || 'lbs',
+        userId,
+      ]
+    );
+
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    res.json({
+      id: user.id,
+      username: user.username,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      age: user.age,
+      heightFeet: user.height_feet,
+      heightInches: user.height_inches,
+      bodyWeight: user.body_weight,
+      fitnessGoal: user.fitness_goal,
+      experienceLevel: user.experience_level,
+      gender: user.gender,
+      bio: user.bio,
+      createdAt: user.created_at,
+    });
+  } catch (error) {
+    console.error('Error updating profile:', error);
+    res.status(500).json({ error: 'Failed to update profile' });
+  }
+});
+
+// ============ EXERCISE ROUTES ============
+
+app.get('/api/exercises', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { search, muscleGroup, equipment } = req.query;
+
+    let query = 'SELECT * FROM exercises WHERE (is_custom = false OR user_id = $1)';
+    const params: any[] = [userId];
+    let paramIndex = 2;
+
+    if (search) {
+      query += ` AND name ILIKE $${paramIndex}`;
+      params.push(`%${search}%`);
+      paramIndex++;
+    }
+
+    if (muscleGroup) {
+      query += ` AND primary_muscles ILIKE $${paramIndex}`;
+      params.push(`%${muscleGroup}%`);
+      paramIndex++;
+    }
+
+    if (equipment) {
+      query += ` AND equipment = $${paramIndex}`;
+      params.push(equipment);
+      paramIndex++;
+    }
+
+    query += ' ORDER BY name';
+
+    const exercises = await db.query(query, params);
+    res.json(exercises.map((e: any) => ({
+      ...e,
+      primaryMuscles: JSON.parse(e.primary_muscles),
+      isCustom: e.is_custom,
+    })));
+  } catch (error) {
+    console.error('Error fetching exercises:', error);
+    res.status(500).json({ error: 'Failed to fetch exercises' });
+  }
+});
+
+app.post('/api/exercises', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { name, primaryMuscles, equipment } = req.body;
+    const id = uuidv4();
+
+    await db.execute(
+      `INSERT INTO exercises (id, name, primary_muscles, equipment, is_custom, user_id)
+       VALUES ($1, $2, $3, $4, true, $5)`,
+      [id, name, JSON.stringify(primaryMuscles), equipment, userId]
+    );
+
+    const exercise = await db.queryOne('SELECT * FROM exercises WHERE id = $1', [id]);
+    res.json({
+      ...exercise,
+      primaryMuscles: JSON.parse(exercise.primary_muscles),
+      isCustom: true,
+    });
+  } catch (error) {
+    console.error('Error creating exercise:', error);
+    res.status(500).json({ error: 'Failed to create exercise' });
+  }
+});
+
+// ============ WORKOUT ROUTES ============
+
+app.get('/api/workouts', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { limit = 10, includeIncomplete } = req.query;
+
+    let query = 'SELECT * FROM workouts WHERE user_id = $1';
+    if (!includeIncomplete) {
+      query += ' AND is_complete = true';
+    }
+    query += ' ORDER BY date DESC LIMIT $2';
+
+    const workouts = await db.query(query, [userId, Number(limit)]);
+    res.json(workouts.map((w: any) => ({
+      ...w,
+      isComplete: w.is_complete,
+    })));
+  } catch (error) {
+    console.error('Error fetching workouts:', error);
+    res.status(500).json({ error: 'Failed to fetch workouts' });
+  }
+});
+
+app.get('/api/workouts/active', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const workout = await db.queryOne(
+      `SELECT * FROM workouts
+       WHERE user_id = $1 AND is_complete = false
+       ORDER BY created_at DESC LIMIT 1`,
+      [userId]
+    );
+
+    if (!workout) {
+      return res.json(null);
+    }
+
+    const sets = await db.query(
+      `SELECT ws.*, e.name as exercise_name, e.primary_muscles, e.equipment
+       FROM workout_sets ws
+       JOIN exercises e ON ws.exercise_id = e.id
+       WHERE ws.workout_id = $1
+       ORDER BY ws.created_at, ws.set_number`,
+      [workout.id]
+    );
+
+    res.json({
+      ...workout,
+      isComplete: false,
+      sets: sets.map((s: any) => ({
+        ...s,
+        primaryMuscles: JSON.parse(s.primary_muscles),
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching active workout:', error);
+    res.status(500).json({ error: 'Failed to fetch active workout' });
+  }
+});
+
+app.post('/api/workouts', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { name, date: customDate, duration, isComplete } = req.body;
+    const id = uuidv4();
+    const date = customDate || new Date().toISOString().split('T')[0];
+
+    await db.execute(
+      `INSERT INTO workouts (id, user_id, name, date, duration, is_complete)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, userId, name || null, date, duration || null, isComplete || false]
+    );
+
+    const workout = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [id]);
+    res.json({ ...workout, isComplete: workout.is_complete, sets: [] });
+  } catch (error) {
+    console.error('Error creating workout:', error);
+    res.status(500).json({ error: 'Failed to create workout' });
+  }
+});
+
+app.get('/api/workouts/:id', async (req, res) => {
+  try {
+    const workout = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [req.params.id]);
+
+    if (!workout) {
+      return res.status(404).json({ error: 'Workout not found' });
+    }
+
+    const sets = await db.query(
+      `SELECT ws.*, e.name as exercise_name, e.primary_muscles, e.equipment
+       FROM workout_sets ws
+       JOIN exercises e ON ws.exercise_id = e.id
+       WHERE ws.workout_id = $1
+       ORDER BY ws.created_at, ws.set_number`,
+      [workout.id]
+    );
+
+    res.json({
+      ...workout,
+      isComplete: workout.is_complete,
+      sets: sets.map((s: any) => ({
+        ...s,
+        primaryMuscles: JSON.parse(s.primary_muscles),
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching workout:', error);
+    res.status(500).json({ error: 'Failed to fetch workout' });
+  }
+});
+
+app.patch('/api/workouts/:id', async (req, res) => {
+  try {
+    const { name, notes, isComplete, duration } = req.body;
+    const workout = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [req.params.id]);
+
+    if (!workout) {
+      return res.status(404).json({ error: 'Workout not found' });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    if (name !== undefined) {
+      updates.push(`name = $${paramIndex}`);
+      params.push(name);
+      paramIndex++;
+    }
+    if (notes !== undefined) {
+      updates.push(`notes = $${paramIndex}`);
+      params.push(notes);
+      paramIndex++;
+    }
+    if (isComplete !== undefined) {
+      updates.push(`is_complete = $${paramIndex}`);
+      params.push(isComplete);
+      paramIndex++;
+    }
+    if (duration !== undefined) {
+      updates.push(`duration = $${paramIndex}`);
+      params.push(duration);
+      paramIndex++;
+    }
+
+    if (updates.length > 0) {
+      params.push(req.params.id);
+      await db.execute(
+        `UPDATE workouts SET ${updates.join(', ')} WHERE id = $${paramIndex}`,
+        params
+      );
+    }
+
+    const updated = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [req.params.id]);
+    res.json({ ...updated, isComplete: updated.is_complete });
+  } catch (error) {
+    console.error('Error updating workout:', error);
+    res.status(500).json({ error: 'Failed to update workout' });
+  }
+});
+
+// Clear all workouts for the current user - MUST come before :id route
+app.delete('/api/workouts', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    // Delete all personal records for this user
+    await db.execute('DELETE FROM personal_records WHERE user_id = $1', [userId]);
+    // Delete all sets from user's workouts
+    await db.execute(
+      'DELETE FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = $1)',
+      [userId]
+    );
+    // Delete all workouts
+    await db.execute('DELETE FROM workouts WHERE user_id = $1', [userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing workouts:', error);
+    res.status(500).json({ error: 'Failed to clear workouts' });
+  }
+});
+
+app.delete('/api/workouts/:id', async (req, res) => {
+  try {
+    // First delete all sets associated with the workout
+    await db.execute('DELETE FROM workout_sets WHERE workout_id = $1', [req.params.id]);
+    // Then delete the workout
+    await db.execute('DELETE FROM workouts WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting workout:', error);
+    res.status(500).json({ error: 'Failed to delete workout' });
+  }
+});
+
+// ============ WORKOUT SET ROUTES ============
+
+app.post('/api/workouts/:workoutId/sets', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { exerciseId, setNumber, reps, weight } = req.body;
+    const id = uuidv4();
+
+    await db.execute(
+      `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [id, req.params.workoutId, exerciseId, setNumber, reps, weight]
+    );
+
+    // Check for PRs
+    await checkAndUpdatePRs(userId, exerciseId, req.params.workoutId, weight, reps);
+
+    const set = await db.queryOne('SELECT * FROM workout_sets WHERE id = $1', [id]);
+    res.json(set);
+  } catch (error) {
+    console.error('Error creating set:', error);
+    res.status(500).json({ error: 'Failed to create set' });
+  }
+});
+
+app.patch('/api/sets/:id', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { reps, weight } = req.body;
+    const set = await db.queryOne('SELECT * FROM workout_sets WHERE id = $1', [req.params.id]);
+
+    if (!set) {
+      return res.status(404).json({ error: 'Set not found' });
+    }
+
+    await db.execute(
+      'UPDATE workout_sets SET reps = $1, weight = $2 WHERE id = $3',
+      [reps, weight, req.params.id]
+    );
+
+    // Check for PRs after update
+    await checkAndUpdatePRs(userId, set.exercise_id, set.workout_id, weight, reps);
+
+    const updated = await db.queryOne('SELECT * FROM workout_sets WHERE id = $1', [req.params.id]);
+    res.json(updated);
+  } catch (error) {
+    console.error('Error updating set:', error);
+    res.status(500).json({ error: 'Failed to update set' });
+  }
+});
+
+app.delete('/api/sets/:id', async (req, res) => {
+  try {
+    await db.execute('DELETE FROM workout_sets WHERE id = $1', [req.params.id]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting set:', error);
+    res.status(500).json({ error: 'Failed to delete set' });
+  }
+});
+
+// ============ EXERCISE HISTORY ROUTES ============
+
+app.get('/api/exercises/:exerciseId/history', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { weeks = 8 } = req.query;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - Number(weeks) * 7);
+
+    const sessions = await db.query(
+      `SELECT w.id as workout_id, w.date, ws.set_number, ws.reps, ws.weight
+       FROM workouts w
+       JOIN workout_sets ws ON w.id = ws.workout_id
+       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = true AND w.date >= $3
+       ORDER BY w.date DESC, ws.set_number`,
+      [userId, req.params.exerciseId, startDate.toISOString().split('T')[0]]
+    );
+
+    // Group by workout
+    const grouped: Record<string, any> = {};
+    for (const row of sessions) {
+      if (!grouped[row.workout_id]) {
+        grouped[row.workout_id] = {
+          date: row.date,
+          sets: [],
+          totalVolume: 0,
+          maxWeight: 0,
+          totalReps: 0,
+        };
+      }
+      grouped[row.workout_id].sets.push({
+        setNumber: row.set_number,
+        reps: row.reps,
+        weight: row.weight,
+      });
+      grouped[row.workout_id].totalVolume += row.reps * row.weight;
+      grouped[row.workout_id].maxWeight = Math.max(grouped[row.workout_id].maxWeight, row.weight);
+      grouped[row.workout_id].totalReps += row.reps;
+    }
+
+    res.json({
+      exerciseId: req.params.exerciseId,
+      sessions: Object.values(grouped),
+    });
+  } catch (error) {
+    console.error('Error fetching exercise history:', error);
+    res.status(500).json({ error: 'Failed to fetch exercise history' });
+  }
+});
+
+app.get('/api/exercises/:exerciseId/previous', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const previousWorkout = await db.queryOne(
+      `SELECT w.id, w.date
+       FROM workouts w
+       JOIN workout_sets ws ON w.id = ws.workout_id
+       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = true
+       GROUP BY w.id, w.date
+       ORDER BY w.date DESC
+       LIMIT 1`,
+      [userId, req.params.exerciseId]
+    );
+
+    if (!previousWorkout) {
+      return res.json({ sets: [] });
+    }
+
+    const sets = await db.query(
+      `SELECT * FROM workout_sets
+       WHERE workout_id = $1 AND exercise_id = $2
+       ORDER BY set_number`,
+      [previousWorkout.id, req.params.exerciseId]
+    );
+
+    res.json({
+      date: previousWorkout.date,
+      sets,
+    });
+  } catch (error) {
+    console.error('Error fetching previous exercise:', error);
+    res.status(500).json({ error: 'Failed to fetch previous exercise' });
+  }
+});
+
+// ============ PERSONAL RECORDS ROUTES ============
+
+app.get('/api/personal-records', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { limit = 5 } = req.query;
+
+    const prs = await db.query(
+      `SELECT pr.*, e.name as exercise_name
+       FROM personal_records pr
+       JOIN exercises e ON pr.exercise_id = e.id
+       WHERE pr.user_id = $1
+       ORDER BY pr.achieved_at DESC
+       LIMIT $2`,
+      [userId, Number(limit)]
+    );
+
+    res.json(prs.map((pr: any) => ({
+      ...pr,
+      exerciseName: pr.exercise_name,
+    })));
+  } catch (error) {
+    console.error('Error fetching PRs:', error);
+    res.status(500).json({ error: 'Failed to fetch PRs' });
+  }
+});
+
+async function checkAndUpdatePRs(
+  userId: string,
+  exerciseId: string,
+  workoutId: string,
+  weight: number,
+  reps: number
+) {
+  // Check max weight PR
+  const currentMaxWeight = await db.queryOne(
+    `SELECT value FROM personal_records
+     WHERE user_id = $1 AND exercise_id = $2 AND type = 'max_weight'`,
+    [userId, exerciseId]
+  );
+
+  if (!currentMaxWeight || weight > currentMaxWeight.value) {
+    const existingPR = await db.queryOne(
+      `SELECT id FROM personal_records WHERE user_id = $1 AND exercise_id = $2 AND type = 'max_weight'`,
+      [userId, exerciseId]
+    );
+
+    if (existingPR) {
+      await db.execute(
+        `UPDATE personal_records SET value = $1, workout_id = $2, achieved_at = NOW()
+         WHERE id = $3`,
+        [weight, workoutId, existingPR.id]
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO personal_records (id, user_id, exercise_id, type, value, workout_id)
+         VALUES ($1, $2, $3, 'max_weight', $4, $5)`,
+        [uuidv4(), userId, exerciseId, weight, workoutId]
+      );
+    }
+  }
+
+  // Check max volume PR
+  const volume = weight * reps;
+  const currentMaxVolume = await db.queryOne(
+    `SELECT value FROM personal_records
+     WHERE user_id = $1 AND exercise_id = $2 AND type = 'max_volume'`,
+    [userId, exerciseId]
+  );
+
+  if (!currentMaxVolume || volume > currentMaxVolume.value) {
+    const existingPR = await db.queryOne(
+      `SELECT id FROM personal_records WHERE user_id = $1 AND exercise_id = $2 AND type = 'max_volume'`,
+      [userId, exerciseId]
+    );
+
+    if (existingPR) {
+      await db.execute(
+        `UPDATE personal_records SET value = $1, workout_id = $2, achieved_at = NOW()
+         WHERE id = $3`,
+        [volume, workoutId, existingPR.id]
+      );
+    } else {
+      await db.execute(
+        `INSERT INTO personal_records (id, user_id, exercise_id, type, value, workout_id)
+         VALUES ($1, $2, $3, 'max_volume', $4, $5)`,
+        [uuidv4(), userId, exerciseId, volume, workoutId]
+      );
+    }
+  }
+}
+
+// ============ DASHBOARD / STATS ROUTES ============
+
+app.get('/api/dashboard', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+
+    // Get streak
+    const streak = await calculateStreak(userId);
+
+    // Weekly workout count
+    const weekStart = new Date();
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    const weeklyCountResult = await db.queryOne(
+      `SELECT COUNT(*) as count FROM workouts
+       WHERE user_id = $1 AND is_complete = true AND date >= $2`,
+      [userId, weekStart.toISOString().split('T')[0]]
+    );
+
+    // Recent workouts
+    const recentWorkouts = await db.query(
+      `SELECT * FROM workouts
+       WHERE user_id = $1 AND is_complete = true
+       ORDER BY date DESC LIMIT 3`,
+      [userId]
+    );
+
+    // Recent PRs
+    const recentPRs = await db.query(
+      `SELECT pr.*, e.name as exercise_name
+       FROM personal_records pr
+       JOIN exercises e ON pr.exercise_id = e.id
+       WHERE pr.user_id = $1
+       ORDER BY pr.achieved_at DESC
+       LIMIT 5`,
+      [userId]
+    );
+
+    // Weekly muscle group distribution
+    const weeklyMuscles = await db.query(
+      `SELECT e.primary_muscles, SUM(ws.reps * ws.weight) as volume, COUNT(*) as sets
+       FROM workout_sets ws
+       JOIN workouts w ON ws.workout_id = w.id
+       JOIN exercises e ON ws.exercise_id = e.id
+       WHERE w.user_id = $1 AND w.is_complete = true AND w.date >= $2
+       GROUP BY e.primary_muscles`,
+      [userId, weekStart.toISOString().split('T')[0]]
+    );
+
+    const muscleGroupVolumes = calculateMuscleGroupVolumes(weeklyMuscles);
+
+    res.json({
+      streak,
+      weeklyWorkoutCount: parseInt(weeklyCountResult?.count || '0'),
+      recentWorkouts: recentWorkouts.map((w: any) => ({ ...w, isComplete: true })),
+      recentPRs: recentPRs.map((pr: any) => ({ ...pr, exerciseName: pr.exercise_name })),
+      weeklyMuscleGroups: muscleGroupVolumes,
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard:', error);
+    res.status(500).json({ error: 'Failed to fetch dashboard' });
+  }
+});
+
+app.get('/api/stats/muscle-groups', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const { period = 'week' } = req.query;
+
+    let startDate = new Date();
+    if (period === 'week') {
+      startDate.setDate(startDate.getDate() - 7);
+    } else if (period === 'month') {
+      startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const data = await db.query(
+      `SELECT e.primary_muscles, SUM(ws.reps * ws.weight) as volume, COUNT(*) as sets
+       FROM workout_sets ws
+       JOIN workouts w ON ws.workout_id = w.id
+       JOIN exercises e ON ws.exercise_id = e.id
+       WHERE w.user_id = $1 AND w.is_complete = true AND w.date >= $2
+       GROUP BY e.primary_muscles`,
+      [userId, startDate.toISOString().split('T')[0]]
+    );
+
+    const muscleGroupVolumes = calculateMuscleGroupVolumes(data);
+
+    // Check for imbalances
+    const imbalances = checkImbalances(muscleGroupVolumes);
+
+    res.json({
+      muscleGroups: muscleGroupVolumes,
+      imbalances,
+    });
+  } catch (error) {
+    console.error('Error fetching muscle groups:', error);
+    res.status(500).json({ error: 'Failed to fetch muscle groups' });
+  }
+});
+
+async function calculateStreak(userId: string): Promise<number> {
+  const workouts = await db.query(
+    `SELECT DISTINCT date FROM workouts
+     WHERE user_id = $1 AND is_complete = true
+     ORDER BY date DESC`,
+    [userId]
+  );
+
+  if (workouts.length === 0) return 0;
+
+  let streak = 0;
+  let currentDate = new Date();
+  currentDate.setHours(0, 0, 0, 0);
+
+  for (const workout of workouts) {
+    const workoutDate = new Date(workout.date);
+    workoutDate.setHours(0, 0, 0, 0);
+
+    const diffDays = Math.floor((currentDate.getTime() - workoutDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (diffDays <= 1) {
+      streak++;
+      currentDate = workoutDate;
+    } else {
+      break;
+    }
+  }
+
+  return streak;
+}
+
+function calculateMuscleGroupVolumes(data: { primary_muscles: string; volume: string; sets: string }[]) {
+  const muscleGroups: Record<string, { volume: number; sets: number }> = {};
+  let totalVolume = 0;
+
+  for (const row of data) {
+    const muscles = JSON.parse(row.primary_muscles) as string[];
+    const volume = parseFloat(row.volume);
+    const sets = parseInt(row.sets);
+    const volumePerMuscle = volume / muscles.length;
+    const setsPerMuscle = sets / muscles.length;
+
+    for (const muscle of muscles) {
+      if (!muscleGroups[muscle]) {
+        muscleGroups[muscle] = { volume: 0, sets: 0 };
+      }
+      muscleGroups[muscle].volume += volumePerMuscle;
+      muscleGroups[muscle].sets += setsPerMuscle;
+      totalVolume += volumePerMuscle;
+    }
+  }
+
+  return Object.entries(muscleGroups).map(([muscleGroup, data]) => ({
+    muscleGroup,
+    volume: Math.round(data.volume),
+    sets: Math.round(data.sets),
+    percentage: totalVolume > 0 ? Math.round((data.volume / totalVolume) * 100) : 0,
+  })).sort((a, b) => b.volume - a.volume);
+}
+
+function checkImbalances(muscleGroups: { muscleGroup: string; volume: number }[]) {
+  const imbalances: { warning: string; muscleGroup1: string; muscleGroup2: string }[] = [];
+
+  // Check push/pull imbalance (Chest vs Back)
+  const chest = muscleGroups.find(m => m.muscleGroup === 'Chest');
+  const back = muscleGroups.find(m => m.muscleGroup === 'Back');
+
+  if (chest && back) {
+    if (chest.volume > back.volume * 2) {
+      imbalances.push({
+        warning: 'Chest volume is more than 2x Back volume. Consider more pulling exercises.',
+        muscleGroup1: 'Chest',
+        muscleGroup2: 'Back',
+      });
+    } else if (back.volume > chest.volume * 2) {
+      imbalances.push({
+        warning: 'Back volume is more than 2x Chest volume. Consider more pushing exercises.',
+        muscleGroup1: 'Back',
+        muscleGroup2: 'Chest',
+      });
+    }
+  }
+
+  // Check quads vs hamstrings
+  const quads = muscleGroups.find(m => m.muscleGroup === 'Quads');
+  const hamstrings = muscleGroups.find(m => m.muscleGroup === 'Hamstrings');
+
+  if (quads && hamstrings) {
+    if (quads.volume > hamstrings.volume * 2) {
+      imbalances.push({
+        warning: 'Quad volume is more than 2x Hamstring volume. Consider more hip hinge movements.',
+        muscleGroup1: 'Quads',
+        muscleGroup2: 'Hamstrings',
+      });
+    }
+  }
+
+  return imbalances;
+}
+
+// Initialize database and start server
+async function startServer() {
+  try {
+    await initializeDatabase();
+    await seedExercises();
+    await createDefaultUser();
+
+    app.listen(PORT, () => {
+      console.log(`Server running on http://localhost:${PORT}`);
+    });
+  } catch (error) {
+    console.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+startServer();
