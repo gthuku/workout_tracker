@@ -1,11 +1,71 @@
 import express from 'express';
 import cors from 'cors';
 import bcrypt from 'bcrypt';
-import db, { initializeDatabase } from './database.js';
+import db, { initializeDatabase, closeDatabase } from './database.js';
 import { seedExercises, createDefaultUser } from './seed.js';
 import { v4 as uuidv4 } from 'uuid';
 
 const SALT_ROUNDS = 10;
+
+// Database result types (snake_case from SQLite)
+interface DbUser {
+  id: string;
+  username: string;
+  email?: string;
+  password_hash?: string;
+  preferred_unit: string;
+  created_at: string;
+  display_name?: string;
+  age?: number;
+  height_feet?: number;
+  height_inches?: number;
+  body_weight?: number;
+  fitness_goal?: string;
+  experience_level?: string;
+  gender?: string;
+  bio?: string;
+}
+
+interface DbExercise {
+  id: string;
+  name: string;
+  primary_muscles: string;
+  equipment: string;
+  is_custom: number;
+  user_id?: string;
+}
+
+interface DbWorkout {
+  id: string;
+  user_id: string;
+  name?: string;
+  date: string;
+  duration?: number;
+  notes?: string;
+  is_complete: number;
+  created_at: string;
+}
+
+interface DbWorkoutSet {
+  id: string;
+  workout_id: string;
+  exercise_id: string;
+  set_number: number;
+  reps?: number;
+  weight?: number;
+  duration?: number;
+  created_at: string;
+}
+
+interface DbPersonalRecord {
+  id: string;
+  user_id: string;
+  exercise_id: string;
+  type: string;
+  value: number;
+  workout_id: string;
+  achieved_at: string;
+}
 
 const app = express();
 const PORT = 3001;
@@ -18,7 +78,7 @@ async function getUserId(req: express.Request): Promise<string> {
   const userId = req.headers['x-user-id'] as string;
   if (userId) return userId;
   // Fallback to first user
-  const firstUser = await db.queryOne('SELECT id FROM users ORDER BY created_at LIMIT 1');
+  const firstUser = await db.queryOne<Pick<DbUser, 'id'>>('SELECT id FROM users ORDER BY created_at LIMIT 1');
   return firstUser?.id || '';
 }
 
@@ -27,8 +87,8 @@ async function getUserId(req: express.Request): Promise<string> {
 // List all profiles
 app.get('/api/profiles', async (req, res) => {
   try {
-    const profiles = await db.query('SELECT * FROM users ORDER BY created_at');
-    res.json(profiles.map((user: any) => ({
+    const profiles = await db.query<DbUser>('SELECT * FROM users ORDER BY created_at');
+    res.json(profiles.map((user) => ({
       id: user.id,
       username: user.username,
       preferredUnit: user.preferred_unit,
@@ -37,7 +97,7 @@ app.get('/api/profiles', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal,
+      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
       experienceLevel: user.experience_level,
       bio: user.bio,
       createdAt: user.created_at,
@@ -60,7 +120,10 @@ app.post('/api/profiles', async (req, res) => {
       [id, username, displayName || username]
     );
 
-    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [id]);
+    const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.json({
       id: user.id,
       username: user.username,
@@ -68,8 +131,8 @@ app.post('/api/profiles', async (req, res) => {
       displayName: user.display_name,
       createdAt: user.created_at,
     });
-  } catch (error: any) {
-    if (error.code === '23505') { // Unique constraint violation
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === '23505') { // Unique constraint violation
       return res.status(400).json({ error: 'Username already exists' });
     }
     console.error('Error creating profile:', error);
@@ -133,7 +196,10 @@ app.post('/api/auth/register', async (req, res) => {
       [id, username, email || null, passwordHash, displayName || username]
     );
 
-    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [id]);
+    const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [id]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
     res.json({
       id: user.id,
       username: user.username,
@@ -142,7 +208,7 @@ app.post('/api/auth/register', async (req, res) => {
       displayName: user.display_name,
       createdAt: user.created_at,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error('Error registering user:', error);
     res.status(500).json({ error: 'Failed to register user' });
   }
@@ -157,7 +223,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 
   try {
-    const user = db.queryOne(
+    const user = await db.queryOne<DbUser>(
       'SELECT * FROM users WHERE username = $1 OR email = $2',
       [username, username]
     );
@@ -296,7 +362,7 @@ app.get('/api/user', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal,
+      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
       experienceLevel: user.experience_level,
       gender: user.gender,
       bio: user.bio,
@@ -356,7 +422,7 @@ app.put('/api/user/profile', async (req, res) => {
         heightFeet || null,
         heightInches || null,
         bodyWeight || null,
-        fitnessGoal || null,
+        fitnessGoal ? JSON.stringify(fitnessGoal) : null,
         experienceLevel || null,
         gender || null,
         bio || null,
@@ -375,7 +441,7 @@ app.put('/api/user/profile', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal,
+      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
       experienceLevel: user.experience_level,
       gender: user.gender,
       bio: user.bio,
@@ -481,10 +547,28 @@ app.get('/api/workouts', async (req, res) => {
 app.get('/api/workouts/active', async (req, res) => {
   try {
     const userId = await getUserId(req);
-    const workout = await db.queryOne(
-      `SELECT * FROM workouts
-       WHERE user_id = $1 AND is_complete = 0
-       ORDER BY created_at DESC LIMIT 1`,
+    const workout = await db.queryOne<DbWorkout & { sets: string }>(
+      `SELECT w.*,
+              JSON_GROUP_ARRAY(
+                JSON_OBJECT(
+                  'id', ws.id,
+                  'workout_id', ws.workout_id,
+                  'exercise_id', ws.exercise_id,
+                  'set_number', ws.set_number,
+                  'reps', ws.reps,
+                  'weight', ws.weight,
+                  'created_at', ws.created_at,
+                  'exercise_name', e.name,
+                  'primary_muscles', e.primary_muscles,
+                  'equipment', e.equipment
+                )
+              ) as sets
+       FROM workouts w
+       LEFT JOIN workout_sets ws ON w.id = ws.workout_id
+       LEFT JOIN exercises e ON ws.exercise_id = e.id
+       WHERE w.user_id = $1 AND w.is_complete = 0
+       GROUP BY w.id
+       ORDER BY w.created_at DESC LIMIT 1`,
       [userId]
     );
 
@@ -492,18 +576,17 @@ app.get('/api/workouts/active', async (req, res) => {
       return res.json(null);
     }
 
-    const sets = await db.query(
-      `SELECT ws.*, e.name as exercise_name, e.primary_muscles, e.equipment
-       FROM workout_sets ws
-       JOIN exercises e ON ws.exercise_id = e.id
-       WHERE ws.workout_id = $1
-       ORDER BY ws.created_at, ws.set_number`,
-      [workout.id]
-    );
+    const sets = workout.sets === '[null]' ? [] : JSON.parse(workout.sets);
 
     res.json({
-      ...workout,
+      id: workout.id,
+      userId: workout.user_id,
+      date: workout.date,
+      name: workout.name,
+      duration: workout.duration,
+      notes: workout.notes,
       isComplete: false,
+      createdAt: workout.created_at,
       sets: sets.map((s: any) => ({
         ...s,
         primaryMuscles: JSON.parse(s.primary_muscles),
@@ -538,24 +621,45 @@ app.post('/api/workouts', async (req, res) => {
 
 app.get('/api/workouts/:id', async (req, res) => {
   try {
-    const workout = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [req.params.id]);
+    const workout = await db.queryOne<DbWorkout & { sets: string }>(
+      `SELECT w.*,
+              JSON_GROUP_ARRAY(
+                JSON_OBJECT(
+                  'id', ws.id,
+                  'workout_id', ws.workout_id,
+                  'exercise_id', ws.exercise_id,
+                  'set_number', ws.set_number,
+                  'reps', ws.reps,
+                  'weight', ws.weight,
+                  'created_at', ws.created_at,
+                  'exercise_name', e.name,
+                  'primary_muscles', e.primary_muscles,
+                  'equipment', e.equipment
+                )
+              ) as sets
+       FROM workouts w
+       LEFT JOIN workout_sets ws ON w.id = ws.workout_id
+       LEFT JOIN exercises e ON ws.exercise_id = e.id
+       WHERE w.id = $1
+       GROUP BY w.id`,
+      [req.params.id]
+    );
 
     if (!workout) {
       return res.status(404).json({ error: 'Workout not found' });
     }
 
-    const sets = await db.query(
-      `SELECT ws.*, e.name as exercise_name, e.primary_muscles, e.equipment
-       FROM workout_sets ws
-       JOIN exercises e ON ws.exercise_id = e.id
-       WHERE ws.workout_id = $1
-       ORDER BY ws.created_at, ws.set_number`,
-      [workout.id]
-    );
+    const sets = workout.sets === '[null]' ? [] : JSON.parse(workout.sets);
 
     res.json({
-      ...workout,
+      id: workout.id,
+      userId: workout.user_id,
+      date: workout.date,
+      name: workout.name,
+      duration: workout.duration,
+      notes: workout.notes,
       isComplete: workout.is_complete,
+      createdAt: workout.created_at,
       sets: sets.map((s: any) => ({
         ...s,
         primaryMuscles: JSON.parse(s.primary_muscles),
@@ -655,17 +759,21 @@ app.delete('/api/workouts/:id', async (req, res) => {
 app.post('/api/workouts/:workoutId/sets', async (req, res) => {
   try {
     const userId = await getUserId(req);
-    const { exerciseId, setNumber, reps, weight } = req.body;
+    const { exerciseId, setNumber, reps, weight, duration } = req.body;
     const id = uuidv4();
 
-    await db.execute(
-      `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, req.params.workoutId, exerciseId, setNumber, reps, weight]
-    );
+    await db.withTransaction(async () => {
+      await db.execute(
+        `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight, duration)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, req.params.workoutId, exerciseId, setNumber, reps || null, weight || null, duration || null]
+      );
 
-    // Check for PRs
-    await checkAndUpdatePRs(userId, exerciseId, req.params.workoutId, weight, reps);
+      // Check for PRs (only for strength exercises)
+      if (reps && weight) {
+        await checkAndUpdatePRs(userId, exerciseId, req.params.workoutId, weight, reps);
+      }
+    });
 
     const set = await db.queryOne('SELECT * FROM workout_sets WHERE id = $1', [id]);
     res.json(set);
@@ -685,13 +793,15 @@ app.patch('/api/sets/:id', async (req, res) => {
       return res.status(404).json({ error: 'Set not found' });
     }
 
-    await db.execute(
-      'UPDATE workout_sets SET reps = $1, weight = $2 WHERE id = $3',
-      [reps, weight, req.params.id]
-    );
+    await db.withTransaction(async () => {
+      await db.execute(
+        'UPDATE workout_sets SET reps = $1, weight = $2 WHERE id = $3',
+        [reps, weight, req.params.id]
+      );
 
-    // Check for PRs after update
-    await checkAndUpdatePRs(userId, set.exercise_id, set.workout_id, weight, reps);
+      // Check for PRs after update
+      await checkAndUpdatePRs(userId, set.exercise_id, set.workout_id, weight, reps);
+    });
 
     const updated = await db.queryOne('SELECT * FROM workout_sets WHERE id = $1', [req.params.id]);
     res.json(updated);
@@ -956,7 +1066,7 @@ app.get('/api/stats/muscle-groups', async (req, res) => {
     const userId = await getUserId(req);
     const { period = 'week' } = req.query;
 
-    let startDate = new Date();
+    const startDate = new Date();
     if (period === 'week') {
       startDate.setDate(startDate.getDate() - 7);
     } else if (period === 'month') {
@@ -1094,6 +1204,19 @@ function startServer() {
     initializeDatabase();
     seedExercises();
     createDefaultUser();
+
+    // Graceful shutdown
+    process.on('SIGINT', () => {
+      console.log('Received SIGINT, shutting down gracefully...');
+      closeDatabase();
+      process.exit(0);
+    });
+
+    process.on('SIGTERM', () => {
+      console.log('Received SIGTERM, shutting down gracefully...');
+      closeDatabase();
+      process.exit(0);
+    });
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);

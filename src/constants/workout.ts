@@ -1,0 +1,31 @@
+// Workout-related constants
+export const WORKOUT_LIMITS = {
+  MAX_WEIGHT: 500,
+  MAX_REPS: 100,
+  MIN_WEIGHT: 0,
+  MIN_REPS: 1,
+  DEFAULT_WEIGHT: 45,
+  DEFAULT_REPS: 10,
+} as const;
+
+export const WORKOUT_CONSTANTS = {
+  DEFAULT_SET_INCREMENT: 5,
+  DEFAULT_WEIGHT_INCREMENT: 5,
+  MAX_SETS_PER_EXERCISE: 20,
+  RECENT_WORKOUTS_LIMIT: 3,
+  RECENT_PRS_LIMIT: 5,
+  EXERCISE_HISTORY_LIMIT: 8,
+} as const;
+
+// UI-related constants
+export const UI_CONSTANTS = {
+  DEBOUNCE_DELAY: 300,
+  ANIMATION_DURATION: 200,
+  CONFIRMATION_TIMEOUT: 3000,
+} as const;
+
+// API-related constants
+export const API_CONSTANTS = {
+  DEFAULT_WORKOUTS_LIMIT: 10,
+  MAX_WORKOUTS_LIMIT: 100,
+} as const;

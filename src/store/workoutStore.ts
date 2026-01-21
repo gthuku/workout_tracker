@@ -21,7 +21,7 @@ interface WorkoutStore {
   resumeWorkout: () => Promise<void>;
   addExercise: (exercise: Exercise) => Promise<void>;
   removeExercise: (exerciseId: string) => Promise<void>;
-  addSet: (exerciseId: string, reps: number, weight: number) => Promise<{ isNewPR: boolean }>;
+  addSet: (exerciseId: string, reps: number, weight: number, duration?: number) => Promise<{ isNewPR: boolean }>;
   updateSet: (setId: string, reps: number, weight: number) => Promise<void>;
   deleteSet: (setId: string) => Promise<void>;
   updateWorkoutName: (name: string) => Promise<void>;
@@ -168,7 +168,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     }
   },
 
-  addSet: async (exerciseId: string, reps: number, weight: number) => {
+  addSet: async (exerciseId: string, reps: number, weight: number, duration?: number) => {
     const { activeWorkout, workoutExercises } = get();
     if (!activeWorkout) return { isNewPR: false };
 
@@ -178,12 +178,16 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     const currentSets = workoutExercises[exerciseIndex].sets;
     const setNumber = currentSets.length + 1;
 
+    // Store previous state for rollback
+    const previousWorkoutExercises = [...workoutExercises];
+
     try {
       const rawSet = await setApi.create(activeWorkout.id, {
         exerciseId,
         setNumber,
         reps,
         weight,
+        duration,
       });
 
       // Convert raw API response to camelCase
@@ -194,9 +198,11 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         setNumber: rawSet.set_number,
         reps: rawSet.reps,
         weight: rawSet.weight,
+        duration: rawSet.duration,
         createdAt: rawSet.created_at,
       };
 
+      // Optimistic update - update state only after successful API call
       const updatedExercises = [...workoutExercises];
       updatedExercises[exerciseIndex] = {
         ...updatedExercises[exerciseIndex],
@@ -205,14 +211,16 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
 
       set({ workoutExercises: updatedExercises });
 
-      // Check if this might be a PR (simplified check - actual PR check happens on server)
-      const previousSets = workoutExercises[exerciseIndex].previousSets;
-      const maxPreviousWeight = Math.max(0, ...previousSets.map((s) => s.weight));
-      const isNewPR = weight > maxPreviousWeight;
-
+      // Return PR status from server response (if available) or client calculation
+      const isNewPR = (rawSet as any).isPR || false;
+      
       return { isNewPR };
     } catch (error) {
-      set({ error: (error as Error).message });
+      // Rollback to previous state on error
+      set({ 
+        workoutExercises: previousWorkoutExercises,
+        error: (error as Error).message 
+      });
       return { isNewPR: false };
     }
   },

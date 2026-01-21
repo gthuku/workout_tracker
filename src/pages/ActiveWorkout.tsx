@@ -4,7 +4,8 @@ import { Plus, Check, X, ChevronLeft, Save, Trash2, Trophy, Clock, Edit2 } from 
 import confetti from 'canvas-confetti';
 import { useWorkoutStore } from '../store/workoutStore';
 import { ExerciseSelector } from '../components/ExerciseSelector';
-import type { WorkoutSet } from '../types';
+import type { WorkoutSet, Equipment, MuscleGroup } from '../types';
+import { WORKOUT_LIMITS } from '../constants/workout';
 
 export function ActiveWorkout() {
   const navigate = useNavigate();
@@ -195,10 +196,11 @@ export function ActiveWorkout() {
             key={we.exercise.id}
             exerciseName={we.exercise.name}
             muscleGroups={we.exercise.primaryMuscles}
+            equipment={we.exercise.equipment}
             sets={we.sets}
             previousSets={we.previousSets}
-            onAddSet={async (reps, weight) => {
-              const { isNewPR } = await addSet(we.exercise.id, reps, weight);
+            onAddSet={async (reps, weight, duration) => {
+              const { isNewPR } = await addSet(we.exercise.id, reps, weight, duration);
               if (isNewPR) {
                 triggerPRCelebration();
               }
@@ -292,38 +294,54 @@ export function ActiveWorkout() {
 
 interface ExerciseCardProps {
   exerciseName: string;
-  muscleGroups: string[];
+  muscleGroups: MuscleGroup[];
+  equipment: Equipment;
   sets: WorkoutSet[];
   previousSets: WorkoutSet[];
-  onAddSet: (reps: number, weight: number) => void;
-  onUpdateSet: (setId: string, reps: number, weight: number) => void;
+  onAddSet: (reps: number, weight: number, duration?: number) => void;
+  onUpdateSet: (setId: string, reps: number, weight: number, duration?: number) => void;
   onDeleteSet: (setId: string) => void;
 }
 
 function ExerciseCard({
   exerciseName,
   muscleGroups,
+  equipment,
   sets,
   previousSets,
   onAddSet,
   onUpdateSet,
   onDeleteSet,
 }: ExerciseCardProps) {
-  const [weight, setWeight] = useState(previousSets[0]?.weight || 45);
-  const [reps, setReps] = useState(previousSets[0]?.reps || 10);
+  const isCardio = equipment === 'Cardio';
+
+  const [weight, setWeight] = useState(previousSets[0]?.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT);
+  const [reps, setReps] = useState(previousSets[0]?.reps || WORKOUT_LIMITS.DEFAULT_REPS);
+  const [duration, setDuration] = useState(previousSets[0]?.duration || 30); // Default 30 minutes
   const [editingSet, setEditingSet] = useState<string | null>(null);
 
-  const totalVolume = sets.reduce((acc, s) => acc + s.reps * s.weight, 0);
-  const previousVolume = previousSets.reduce((acc, s) => acc + s.reps * s.weight, 0);
+  const totalVolume = isCardio
+    ? sets.reduce((acc, s) => acc + (s.duration || 0), 0)
+    : sets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
+  const previousVolume = isCardio
+    ? previousSets.reduce((acc, s) => acc + (s.duration || 0), 0)
+    : previousSets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
 
   const handleAddSet = () => {
-    onAddSet(reps, weight);
+    if (isCardio) {
+      onAddSet(1, 0, duration); // For cardio, reps=1, weight=0, use duration
+    } else {
+      onAddSet(reps, weight);
+    }
   };
 
   const matchesPrevious = (set: WorkoutSet, index: number) => {
     const prev = previousSets[index];
     if (!prev) return null;
-    return set.reps >= prev.reps && set.weight >= prev.weight;
+    if (isCardio) {
+      return (set.duration || 0) >= (prev.duration || 0);
+    }
+    return (set.reps || 0) >= (prev.reps || 0) && (set.weight || 0) >= (prev.weight || 0);
   };
 
   return (
@@ -335,73 +353,107 @@ function ExerciseCard({
           <p className="text-sm text-blue-400">{muscleGroups.join(', ')}</p>
         </div>
         {previousSets.length > 0 && (
-          <div className="text-right text-xs text-slate-500">
-            <p>Previous best</p>
-            <p className="font-medium text-slate-400">
-              {Math.max(...previousSets.map(s => s.weight))} lbs
-            </p>
-          </div>
-        )}
+           <div className="text-right text-xs text-slate-500">
+             <p>Previous best</p>
+             <p className="font-medium text-slate-400">
+               {isCardio
+                 ? `${Math.max(...previousSets.map(s => s.duration || 0))} min`
+                 : `${Math.max(...previousSets.map(s => s.weight || 0))} lbs`
+               }
+             </p>
+           </div>
+         )}
       </div>
 
       {/* Set Input - Improved Layout with Dropdowns */}
       <div className="bg-slate-700/50 rounded-xl p-4 mb-4">
         <div className="grid grid-cols-2 gap-4 mb-4">
-          {/* Weight Input */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-2 text-center">WEIGHT (lbs)</label>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setWeight(Math.max(0, weight - 1))}
-                className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
-              >
-                -
-              </button>
-              <select
-                value={weight}
-                onChange={(e) => setWeight(Number(e.target.value))}
-                className="flex-1 h-12 bg-slate-800 border-2 border-slate-600 rounded-lg text-center text-lg font-bold focus:border-blue-500 outline-none appearance-none px-2 min-w-0"
-              >
-                {Array.from({ length: 501 }, (_, i) => i).map((val) => (
-                  <option key={val} value={val}>{val}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => setWeight(Math.min(500, weight + 1))}
-                className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
-              >
-                +
-              </button>
+          {isCardio ? (
+            /* Duration Input for Cardio */
+            <div className="col-span-2">
+              <label className="block text-xs text-slate-400 mb-2 text-center">DURATION (minutes)</label>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setDuration(Math.max(1, duration - 1))}
+                  className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  value={duration}
+                  onChange={(e) => setDuration(Number(e.target.value))}
+                  className="flex-1 h-12 bg-slate-800 border-2 border-slate-600 rounded-lg text-center text-lg font-bold focus:border-blue-500 outline-none px-2 min-w-0"
+                  min="1"
+                  max="300"
+                />
+                <button
+                  onClick={() => setDuration(Math.min(300, duration + 1))}
+                  className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                >
+                  +
+                </button>
+              </div>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Weight Input */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-2 text-center">WEIGHT (lbs)</label>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setWeight(Math.max(0, weight - 1))}
+                    className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                  >
+                    -
+                  </button>
+                  <select
+                    value={weight}
+                    onChange={(e) => setWeight(Number(e.target.value))}
+                    className="flex-1 h-12 bg-slate-800 border-2 border-slate-600 rounded-lg text-center text-lg font-bold focus:border-blue-500 outline-none appearance-none px-2 min-w-0"
+                  >
+                    {Array.from({ length: WORKOUT_LIMITS.MAX_WEIGHT + 1 }, (_, i) => i).map((val) => (
+                      <option key={val} value={val}>{val}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setWeight(Math.min(WORKOUT_LIMITS.MAX_WEIGHT, weight + 1))}
+                    className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
 
-          {/* Reps Input */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-2 text-center">REPS</label>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setReps(Math.max(1, reps - 1))}
-                className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
-              >
-                -
-              </button>
-              <select
-                value={reps}
-                onChange={(e) => setReps(Number(e.target.value))}
-                className="flex-1 h-12 bg-slate-800 border-2 border-slate-600 rounded-lg text-center text-lg font-bold focus:border-blue-500 outline-none appearance-none px-2 min-w-0"
-              >
-                {Array.from({ length: 100 }, (_, i) => i + 1).map((val) => (
-                  <option key={val} value={val}>{val}</option>
-                ))}
-              </select>
-              <button
-                onClick={() => setReps(Math.min(100, reps + 1))}
-                className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
-              >
-                +
-              </button>
-            </div>
-          </div>
+              {/* Reps Input */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-2 text-center">REPS</label>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setReps(Math.max(1, reps - 1))}
+                    className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                  >
+                    -
+                  </button>
+                  <select
+                    value={reps}
+                    onChange={(e) => setReps(Number(e.target.value))}
+                    className="flex-1 h-12 bg-slate-800 border-2 border-slate-600 rounded-lg text-center text-lg font-bold focus:border-blue-500 outline-none appearance-none px-2 min-w-0"
+                  >
+                    {Array.from({ length: WORKOUT_LIMITS.MAX_REPS }, (_, i) => i + 1).map((val) => (
+                      <option key={val} value={val}>{val}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => setReps(Math.min(WORKOUT_LIMITS.MAX_REPS, reps + 1))}
+                    className="w-10 h-12 bg-slate-600 hover:bg-slate-500 rounded-lg text-xl font-bold active:scale-95 transition-transform flex-shrink-0"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         <button
@@ -421,7 +473,7 @@ function ExerciseCard({
             const isEditing = editingSet === set.id;
             const matched = matchesPrevious(set, index);
 
-            if (isEditing) {
+            if (isEditing && !isCardio) {
               return (
                 <EditableSetRow
                   key={set.id}
@@ -442,11 +494,13 @@ function ExerciseCard({
             return (
               <div
                 key={set.id}
-                onClick={() => setEditingSet(set.id)}
-                className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
-                  matched === true
-                    ? 'bg-green-500/10 border border-green-500/30'
-                    : 'bg-slate-700/50 hover:bg-slate-700'
+                onClick={() => !isCardio && setEditingSet(set.id)}
+                className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
+                  isCardio
+                    ? 'bg-slate-700/50'
+                    : matched === true
+                      ? 'bg-green-500/10 border border-green-500/30'
+                      : 'bg-slate-700/50 hover:bg-slate-700 cursor-pointer'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -454,14 +508,21 @@ function ExerciseCard({
                     {index + 1}
                   </span>
                   <span className="font-medium text-lg">
-                    {set.weight} lbs × {set.reps}
+                    {isCardio
+                      ? `${set.duration} min`
+                      : `${set.weight} lbs × ${set.reps}`
+                    }
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   {matched === true && (
                     <Check className="text-green-500" size={20} />
                   )}
-                  {matched === true && set.weight > (previousSets[index]?.weight || 0) && (
+                  {matched === true && (
+                    isCardio
+                      ? (set.duration || 0) > (previousSets[index]?.duration || 0)
+                      : (set.weight || 0) > (previousSets[index]?.weight || 0)
+                  ) && (
                     <span className="pr-badge">
                       <Trophy size={12} />
                       PR
@@ -523,8 +584,8 @@ interface EditableSetRowProps {
 }
 
 function EditableSetRow({ set, onSave, onCancel, onDelete }: EditableSetRowProps) {
-  const [editReps, setEditReps] = useState(set.reps);
-  const [editWeight, setEditWeight] = useState(set.weight);
+  const [editReps, setEditReps] = useState(set.reps || WORKOUT_LIMITS.DEFAULT_REPS);
+  const [editWeight, setEditWeight] = useState(set.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT);
 
   return (
     <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
@@ -546,7 +607,7 @@ function EditableSetRow({ set, onSave, onCancel, onDelete }: EditableSetRowProps
       </div>
       <div className="flex gap-2">
         <button
-          onClick={() => onSave(editReps, editWeight)}
+          onClick={() => onSave(editReps || WORKOUT_LIMITS.DEFAULT_REPS, editWeight || WORKOUT_LIMITS.DEFAULT_WEIGHT)}
           className="btn btn-success flex-1 py-2"
         >
           <Check size={16} />

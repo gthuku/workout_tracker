@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import {
   BarChart,
@@ -35,15 +35,7 @@ export function Stats() {
   const [loading, setLoading] = useState(true);
   const [gender, setGender] = useState<Gender>('male');
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  useEffect(() => {
-    loadData();
-  }, [period]);
-
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     try {
       const user = await userApi.get();
       if (user.gender) {
@@ -52,9 +44,13 @@ export function Stats() {
     } catch (error) {
       console.error('Failed to load user data:', error);
     }
-  };
+  }, []);
 
-  const loadData = async () => {
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await dashboardApi.getMuscleGroups(period);
@@ -65,7 +61,11 @@ export function Stats() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [period]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const totalSets = muscleGroups.reduce((acc, mg) => acc + mg.sets, 0);
 

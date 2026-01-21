@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ChevronRight } from 'lucide-react';
 import { exerciseApi } from '../api/client';
@@ -34,11 +34,7 @@ export function ExerciseLibrary() {
   const [equipmentFilter, setEquipmentFilter] = useState<Equipment | ''>('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadExercises();
-  }, [search, muscleFilter, equipmentFilter]);
-
-  const loadExercises = async () => {
+  const loadExercises = useCallback(async () => {
     setLoading(true);
     try {
       const data = await exerciseApi.list({
@@ -52,7 +48,11 @@ export function ExerciseLibrary() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, muscleFilter, equipmentFilter]);
+
+  useEffect(() => {
+    loadExercises();
+  }, [loadExercises]);
 
   // Group exercises by primary muscle
   const groupedExercises = exercises.reduce((acc, exercise) => {

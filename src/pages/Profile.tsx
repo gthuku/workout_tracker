@@ -37,7 +37,7 @@ export function Profile() {
   const [heightFeet, setHeightFeet] = useState<number | ''>('');
   const [heightInches, setHeightInches] = useState<number | ''>('');
   const [bodyWeight, setBodyWeight] = useState<number | ''>('');
-  const [fitnessGoal, setFitnessGoal] = useState('');
+  const [fitnessGoal, setFitnessGoal] = useState<string[]>([]);
   const [experienceLevel, setExperienceLevel] = useState<ExperienceLevel | ''>('');
   const [gender, setGender] = useState<Gender | ''>('');
   const [bio, setBio] = useState('');
@@ -55,7 +55,7 @@ export function Profile() {
       setHeightFeet(userData.heightFeet || '');
       setHeightInches(userData.heightInches || '');
       setBodyWeight(userData.bodyWeight || '');
-      setFitnessGoal(userData.fitnessGoal || '');
+      setFitnessGoal(userData.fitnessGoal || []);
       setExperienceLevel(userData.experienceLevel || '');
       setGender(userData.gender || '');
       setBio(userData.bio || '');
@@ -303,17 +303,23 @@ export function Profile() {
 
           <div className="space-y-4">
             <div>
-              <label className="block text-sm text-slate-400 mb-2">Primary Goal</label>
+              <label className="block text-sm text-slate-400 mb-2">Fitness Goals</label>
               <div className="flex flex-wrap gap-2">
                 {FITNESS_GOALS.map((goal) => (
                   <button
                     key={goal}
-                    onClick={() => setFitnessGoal(goal)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                      fitnessGoal === goal
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-                    }`}
+                     onClick={() => {
+                       setFitnessGoal(prev =>
+                         prev.includes(goal)
+                           ? prev.filter(g => g !== goal)
+                           : [...prev, goal]
+                       );
+                     }}
+                     className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                       fitnessGoal.includes(goal)
+                         ? 'bg-blue-600 text-white'
+                         : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                     }`}
                   >
                     {goal}
                   </button>

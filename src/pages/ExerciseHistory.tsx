@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
 import {
@@ -21,12 +21,7 @@ export function ExerciseHistoryPage() {
   const [history, setHistory] = useState<ExerciseHistory | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!exerciseId) return;
-    loadData();
-  }, [exerciseId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!exerciseId) return;
 
     try {
@@ -43,7 +38,12 @@ export function ExerciseHistoryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [exerciseId]);
+
+  useEffect(() => {
+    if (!exerciseId) return;
+    loadData();
+  }, [loadData, exerciseId]);
 
   if (loading) {
     return (

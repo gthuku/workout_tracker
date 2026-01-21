@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { X, Search, Plus } from 'lucide-react';
 import { exerciseApi } from '../api/client';
 import { useWorkoutStore } from '../store/workoutStore';
@@ -26,11 +26,7 @@ export function ExerciseSelector({ onClose }: ExerciseSelectorProps) {
   const [loading, setLoading] = useState(true);
   const [showCustomForm, setShowCustomForm] = useState(false);
 
-  useEffect(() => {
-    loadExercises();
-  }, [search, muscleFilter, equipmentFilter]);
-
-  const loadExercises = async () => {
+  const loadExercises = useCallback(async () => {
     try {
       const data = await exerciseApi.list({
         search: search || undefined,
@@ -43,7 +39,11 @@ export function ExerciseSelector({ onClose }: ExerciseSelectorProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [search, muscleFilter, equipmentFilter]);
+
+  useEffect(() => {
+    loadExercises();
+  }, [loadExercises]);
 
   const handleSelect = async (exercise: Exercise) => {
     await addExercise(exercise);

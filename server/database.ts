@@ -8,6 +8,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'workout.db');
 const sqlite = new Database(dbPath);
 
+// Enable WAL mode for concurrent writes and performance optimizations
+sqlite.exec('PRAGMA journal_mode = WAL');
+sqlite.exec('PRAGMA synchronous = NORMAL');
+sqlite.exec('PRAGMA cache_size = -64000');
+sqlite.exec('PRAGMA foreign_keys = ON');
+sqlite.exec('PRAGMA temp_store = MEMORY');
+
 console.log(`Using SQLite database at: ${dbPath}`);
 
 // Initialize database schema
@@ -54,33 +61,37 @@ export function initializeDatabase(): void {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Workout sets table
-    CREATE TABLE IF NOT EXISTS workout_sets (
-      id TEXT PRIMARY KEY,
-      workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
-      exercise_id TEXT NOT NULL REFERENCES exercises(id),
-      set_number INTEGER NOT NULL,
-      reps INTEGER NOT NULL,
-      weight REAL NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+     -- Workout sets table
+      CREATE TABLE IF NOT EXISTS workout_sets (
+        id TEXT PRIMARY KEY,
+        workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+        exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+        set_number INTEGER NOT NULL,
+        reps INTEGER CHECK (reps > 0),
+        weight REAL CHECK (weight >= 0),
+        duration INTEGER CHECK (duration > 0),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(workout_id, exercise_id, set_number)
+      );
 
-    -- Personal records table
-    CREATE TABLE IF NOT EXISTS personal_records (
-      id TEXT PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id),
-      exercise_id TEXT NOT NULL REFERENCES exercises(id),
-      type TEXT NOT NULL CHECK (type IN ('max_weight', 'max_volume', 'max_reps')),
-      value REAL NOT NULL,
-      workout_id TEXT NOT NULL REFERENCES workouts(id),
-      achieved_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+     -- Personal records table
+     CREATE TABLE IF NOT EXISTS personal_records (
+       id TEXT PRIMARY KEY,
+       user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+       exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+       type TEXT NOT NULL CHECK (type IN ('max_weight', 'max_volume', 'max_reps')),
+       value REAL NOT NULL,
+       workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+       achieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+       UNIQUE(user_id, exercise_id, type)
+     );
 
-    -- Create indexes for performance
-    CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date);
-    CREATE INDEX IF NOT EXISTS idx_workout_sets_workout ON workout_sets(workout_id);
-    CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
-    CREATE INDEX IF NOT EXISTS idx_personal_records_user_exercise ON personal_records(user_id, exercise_id);
+     -- Create indexes for performance
+     CREATE INDEX IF NOT EXISTS idx_workouts_user_complete ON workouts(user_id, is_complete);
+     CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_exercise ON workout_sets(workout_id, exercise_id);
+     CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
+     CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type);
+     CREATE INDEX IF NOT EXISTS idx_exercises_custom ON exercises(user_id, is_custom) WHERE user_id IS NOT NULL;
   `);
 
   // Add new columns if they don't exist (for existing databases)
@@ -115,19 +126,19 @@ function convertSql(sql: string): string {
 
 // Helper functions for database operations
 export const db = {
-  query: (sql: string, params?: any[]): any[] => {
+  query: <T = unknown>(sql: string, params?: unknown[]): T[] => {
     const convertedSql = convertSql(sql);
     const stmt = sqlite.prepare(convertedSql);
-    return params ? stmt.all(...params) : stmt.all();
+    return (params ? stmt.all(...params) : stmt.all()) as T[];
   },
 
-  queryOne: (sql: string, params?: any[]): any | null => {
+  queryOne: <T = unknown>(sql: string, params?: unknown[]): T | null => {
     const convertedSql = convertSql(sql);
     const stmt = sqlite.prepare(convertedSql);
-    return params ? stmt.get(...params) : stmt.get();
+    return (params ? stmt.get(...params) : stmt.get()) as T | null;
   },
 
-  execute: (sql: string, params?: any[]): void => {
+  execute: (sql: string, params?: unknown[]): void => {
     const convertedSql = convertSql(sql);
     const stmt = sqlite.prepare(convertedSql);
     if (params) {
@@ -137,8 +148,35 @@ export const db = {
     }
   },
 
+  withTransaction: async <T>(fn: () => Promise<T>): Promise<T> => {
+    try {
+      sqlite.exec('BEGIN IMMEDIATE TRANSACTION');
+      const result = await fn();
+      sqlite.exec('COMMIT');
+      return result;
+    } catch (error) {
+      sqlite.exec('ROLLBACK');
+      throw error;
+    }
+  },
+
+  transaction: <T>(fn: () => T): T => {
+    const transaction = sqlite.transaction(fn);
+    return transaction();
+  },
+
   // For compatibility with prepared statements
   prepare: (sql: string) => sqlite.prepare(convertSql(sql)),
 };
+
+// Graceful database shutdown
+export function closeDatabase(): void {
+  try {
+    sqlite.close();
+    console.log('Database connection closed gracefully');
+  } catch (error) {
+    console.error('Error closing database:', error);
+  }
+}
 
 export default db;

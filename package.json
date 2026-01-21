@@ -8,6 +8,11 @@
     "dev:client": "vite",
     "dev:server": "tsx watch server/index.ts",
     "build": "tsc -b && vite build",
+    "build:server": "tsc -b server",
+    "build:client": "vite build --mode production",
+    "start": "node dist/server/index.js",
+    "deploy:frontend": "npm run build:client && aws s3 sync dist/ s3://workout-log-frontend --delete --cache-control max-age=31536000,public",
+    "deploy:backend": "eb deploy",
     "lint": "eslint .",
     "preview": "vite preview"
   },

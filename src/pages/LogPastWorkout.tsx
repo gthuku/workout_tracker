@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, X, Trash2, Save, Calendar, Clock } from 'lucide-react';
 import { workoutApi, setApi, exerciseApi } from '../api/client';
 import type { Exercise } from '../types';
+import { WORKOUT_LIMITS } from '../constants/workout';
 
 interface PastWorkoutExercise {
   exercise: Exercise;
@@ -25,7 +26,7 @@ export function LogPastWorkout() {
     if (exercises.some(e => e.exercise.id === exercise.id)) return;
 
     setExercises([
-      { exercise, sets: [{ reps: 10, weight: 45 }] },
+      { exercise, sets: [{ reps: WORKOUT_LIMITS.DEFAULT_REPS, weight: WORKOUT_LIMITS.DEFAULT_WEIGHT }] },
       ...exercises,
     ]);
     setShowExerciseSelector(false);
@@ -35,8 +36,8 @@ export function LogPastWorkout() {
     const updated = [...exercises];
     const lastSet = updated[exerciseIndex].sets[updated[exerciseIndex].sets.length - 1];
     updated[exerciseIndex].sets.push({
-      reps: lastSet?.reps || 10,
-      weight: lastSet?.weight || 45,
+      reps: lastSet?.reps || WORKOUT_LIMITS.DEFAULT_REPS,
+      weight: lastSet?.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT,
     });
     setExercises(updated);
   };
@@ -233,7 +234,7 @@ export function LogPastWorkout() {
                       onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'weight', Number(e.target.value))}
                       className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
                     >
-                      {Array.from({ length: 501 }, (_, i) => i).map(val => (
+                      {Array.from({ length: WORKOUT_LIMITS.MAX_WEIGHT + 1 }, (_, i) => i).map(val => (
                         <option key={val} value={val}>{val}</option>
                       ))}
                     </select>
@@ -244,7 +245,7 @@ export function LogPastWorkout() {
                       onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'reps', Number(e.target.value))}
                       className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
                     >
-                      {Array.from({ length: 100 }, (_, i) => i + 1).map(val => (
+                      {Array.from({ length: WORKOUT_LIMITS.MAX_REPS }, (_, i) => i + 1).map(val => (
                         <option key={val} value={val}>{val}</option>
                       ))}
                     </select>
@@ -306,11 +307,7 @@ function ExerciseSelectorWrapper({
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadExercises();
-  }, [search]);
-
-  const loadExercises = async () => {
+  const loadExercises = useCallback(async () => {
     try {
       const data = await exerciseApi.list({ search: search || undefined });
       setExercises(data);
@@ -319,7 +316,11 @@ function ExerciseSelectorWrapper({
     } finally {
       setLoading(false);
     }
-  };
+  }, [search]);
+
+  useEffect(() => {
+    loadExercises();
+  }, [loadExercises]);
 
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex flex-col">

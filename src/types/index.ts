@@ -36,7 +36,7 @@ export interface User {
   heightFeet?: number;
   heightInches?: number;
   bodyWeight?: number;
-  fitnessGoal?: string;
+  fitnessGoal?: string[];
   experienceLevel?: ExperienceLevel;
   gender?: Gender;
   bio?: string;
@@ -48,7 +48,7 @@ export interface UserProfile {
   heightFeet?: number;
   heightInches?: number;
   bodyWeight?: number;
-  fitnessGoal?: string;
+  fitnessGoal?: string[];
   experienceLevel?: ExperienceLevel;
   gender?: Gender;
   bio?: string;
@@ -79,8 +79,9 @@ export interface WorkoutSet {
   workoutId: string;
   exerciseId: string;
   setNumber: number;
-  reps: number;
-  weight: number;
+  reps?: number;
+  weight?: number;
+  duration?: number;
   createdAt: string;
 }
 

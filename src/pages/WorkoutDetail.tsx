@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ChevronLeft, Clock, Calendar, Edit2, Check, X, Trash2, Plus } from 'lucide-react';
 import { workoutApi, setApi } from '../api/client';
 import type { RawWorkout, RawWorkoutSet } from '../api/client';
 import type { MuscleGroup } from '../types';
 import { format, parseISO } from 'date-fns';
+import { WORKOUT_LIMITS } from '../constants/workout';
 
 interface WorkoutWithSets extends RawWorkout {
   sets: (RawWorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[];
@@ -21,12 +22,7 @@ export function WorkoutDetail() {
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [addingSetToExercise, setAddingSetToExercise] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!workoutId) return;
-    loadWorkout();
-  }, [workoutId]);
-
-  const loadWorkout = async () => {
+  const loadWorkout = useCallback(async () => {
     if (!workoutId) return;
 
     try {
@@ -37,7 +33,12 @@ export function WorkoutDetail() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [workoutId]);
+
+  useEffect(() => {
+    if (!workoutId) return;
+    loadWorkout();
+  }, [loadWorkout, workoutId]);
 
   const handleSaveName = async () => {
     if (!workout || !editedName.trim()) {
@@ -179,7 +180,7 @@ export function WorkoutDetail() {
     return acc;
   }, {} as Record<string, { exerciseId: string; exerciseName: string; primaryMuscles: MuscleGroup[]; sets: typeof workout.sets }>);
 
-  const totalVolume = workout.sets.reduce((acc, s) => acc + s.reps * s.weight, 0);
+  const totalVolume = workout.sets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
 
   return (
     <div className="min-h-screen pb-20">
@@ -267,7 +268,7 @@ export function WorkoutDetail() {
 
         {/* Exercises */}
         {Object.entries(exerciseGroups).map(([exerciseId, data]) => {
-          const exerciseVolume = data.sets.reduce((acc, s) => acc + s.reps * s.weight, 0);
+          const exerciseVolume = data.sets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
 
           return (
             <div key={exerciseId} className="card">
@@ -371,8 +372,8 @@ interface EditableSetRowProps {
 }
 
 function EditableSetRow({ set, index, onSave, onCancel, onDelete }: EditableSetRowProps) {
-  const [editReps, setEditReps] = useState(set.reps);
-  const [editWeight, setEditWeight] = useState(set.weight);
+  const [editReps, setEditReps] = useState(set.reps || 10);
+  const [editWeight, setEditWeight] = useState(set.weight || 45);
 
   return (
     <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
@@ -421,8 +422,8 @@ interface AddSetFormProps {
 }
 
 function AddSetForm({ lastSet, onAdd, onCancel }: AddSetFormProps) {
-  const [reps, setReps] = useState(lastSet?.reps || 10);
-  const [weight, setWeight] = useState(lastSet?.weight || 45);
+  const [reps, setReps] = useState(lastSet?.reps || WORKOUT_LIMITS.DEFAULT_REPS);
+  const [weight, setWeight] = useState(lastSet?.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT);
 
   return (
     <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mt-3">
