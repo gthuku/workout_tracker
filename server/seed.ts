@@ -103,8 +103,8 @@ const exercises: ExerciseSeed[] = [
   { name: 'Stair Climber', primaryMuscles: ['Cardio', 'Quads'], equipment: 'Cardio' },
 ];
 
-export async function seedExercises(): Promise<void> {
-  const result = await db.queryOne('SELECT COUNT(*) as count FROM exercises WHERE is_custom = false');
+export function seedExercises(): void {
+  const result = db.queryOne('SELECT COUNT(*) as count FROM exercises WHERE is_custom = 0');
   const existingCount = parseInt(result?.count || '0');
 
   if (existingCount > 0) {
@@ -113,9 +113,9 @@ export async function seedExercises(): Promise<void> {
   }
 
   for (const exercise of exercises) {
-    await db.execute(
+    db.execute(
       `INSERT INTO exercises (id, name, primary_muscles, equipment, is_custom)
-       VALUES ($1, $2, $3, $4, false)`,
+       VALUES ($1, $2, $3, $4, 0)`,
       [
         uuidv4(),
         exercise.name,
@@ -128,15 +128,15 @@ export async function seedExercises(): Promise<void> {
   console.log(`Seeded ${exercises.length} exercises`);
 }
 
-export async function createDefaultUser(): Promise<string> {
-  const existing = await db.queryOne('SELECT id FROM users WHERE username = $1', ['default']);
+export function createDefaultUser(): string {
+  const existing = db.queryOne('SELECT id FROM users WHERE username = $1', ['default']);
 
   if (existing) {
     return existing.id;
   }
 
   const userId = uuidv4();
-  await db.execute(
+  db.execute(
     `INSERT INTO users (id, username, preferred_unit) VALUES ($1, 'default', 'lbs')`,
     [userId]
   );

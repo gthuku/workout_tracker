@@ -174,7 +174,7 @@ export function ExerciseHistoryPage() {
                         borderRadius: '8px',
                       }}
                       labelStyle={{ color: '#94a3b8' }}
-                      formatter={(value: number) => [`${value.toLocaleString()} lbs`, 'Volume']}
+                      formatter={(value) => [`${(value as number)?.toLocaleString() ?? 0} lbs`, 'Volume']}
                     />
                     <Line
                       type="monotone"

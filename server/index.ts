@@ -1,8 +1,11 @@
 import express from 'express';
 import cors from 'cors';
+import bcrypt from 'bcrypt';
 import db, { initializeDatabase } from './database.js';
 import { seedExercises, createDefaultUser } from './seed.js';
 import { v4 as uuidv4 } from 'uuid';
+
+const SALT_ROUNDS = 10;
 
 const app = express();
 const PORT = 3001;
@@ -93,6 +96,187 @@ app.delete('/api/profiles/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting profile:', error);
     res.status(500).json({ error: 'Failed to delete profile' });
+  }
+});
+
+// ============ AUTHENTICATION ROUTES ============
+
+// Register new user with password
+app.post('/api/auth/register', async (req, res) => {
+  const { username, email, password, displayName } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  try {
+    // Check if username exists
+    const existingUser = await db.queryOne('SELECT id FROM users WHERE username = $1', [username]);
+    if (existingUser) {
+      return res.status(400).json({ error: 'Username already exists' });
+    }
+
+    // Check if email exists (if provided)
+    if (email) {
+      const existingEmail = await db.queryOne('SELECT id FROM users WHERE email = $1', [email]);
+      if (existingEmail) {
+        return res.status(400).json({ error: 'Email already registered' });
+      }
+    }
+
+    const id = uuidv4();
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+
+    await db.execute(
+      `INSERT INTO users (id, username, email, password_hash, preferred_unit, display_name)
+       VALUES ($1, $2, $3, $4, 'lbs', $5)`,
+      [id, username, email || null, passwordHash, displayName || username]
+    );
+
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [id]);
+    res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      createdAt: user.created_at,
+    });
+  } catch (error: any) {
+    console.error('Error registering user:', error);
+    res.status(500).json({ error: 'Failed to register user' });
+  }
+});
+
+// Login user
+app.post('/api/auth/login', async (req, res) => {
+  const { username, password } = req.body;
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required' });
+  }
+
+  try {
+    const user = db.queryOne(
+      'SELECT * FROM users WHERE username = $1 OR email = $2',
+      [username, username]
+    );
+
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    // If user doesn't have a password set (legacy user), allow login and prompt to set password
+    if (!user.password_hash) {
+      return res.json({
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        preferredUnit: user.preferred_unit,
+        displayName: user.display_name,
+        createdAt: user.created_at,
+        needsPassword: true,
+      });
+    }
+
+    const isValid = await bcrypt.compare(password, user.password_hash);
+    if (!isValid) {
+      return res.status(401).json({ error: 'Invalid username or password' });
+    }
+
+    res.json({
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      preferredUnit: user.preferred_unit,
+      displayName: user.display_name,
+      createdAt: user.created_at,
+    });
+  } catch (error) {
+    console.error('Error logging in:', error);
+    res.status(500).json({ error: 'Failed to login' });
+  }
+});
+
+// Set password for existing user (for users who were created before password auth)
+app.post('/api/auth/set-password', async (req, res) => {
+  const { userId, password } = req.body;
+
+  if (!userId || !password) {
+    return res.status(400).json({ error: 'User ID and password are required' });
+  }
+
+  try {
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    await db.execute('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, userId]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error setting password:', error);
+    res.status(500).json({ error: 'Failed to set password' });
+  }
+});
+
+// Update user email
+app.patch('/api/auth/email', async (req, res) => {
+  const userId = await getUserId(req);
+  const { email } = req.body;
+
+  try {
+    // Check if email is already used
+    if (email) {
+      const existing = await db.queryOne(
+        'SELECT id FROM users WHERE email = $1 AND id != $2',
+        [email, userId]
+      );
+      if (existing) {
+        return res.status(400).json({ error: 'Email already in use' });
+      }
+    }
+
+    await db.execute('UPDATE users SET email = $1 WHERE id = $2', [email || null, userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating email:', error);
+    res.status(500).json({ error: 'Failed to update email' });
+  }
+});
+
+// Change password
+app.post('/api/auth/change-password', async (req, res) => {
+  const userId = await getUserId(req);
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password are required' });
+  }
+
+  try {
+    const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Verify current password
+    if (user.password_hash) {
+      const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+      if (!isValid) {
+        return res.status(401).json({ error: 'Current password is incorrect' });
+      }
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await db.execute('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, userId]);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ error: 'Failed to change password' });
   }
 });
 
@@ -210,7 +394,7 @@ app.get('/api/exercises', async (req, res) => {
     const userId = await getUserId(req);
     const { search, muscleGroup, equipment } = req.query;
 
-    let query = 'SELECT * FROM exercises WHERE (is_custom = false OR user_id = $1)';
+    let query = 'SELECT * FROM exercises WHERE (is_custom = 0 OR user_id = $1)';
     const params: any[] = [userId];
     let paramIndex = 2;
 
@@ -279,7 +463,7 @@ app.get('/api/workouts', async (req, res) => {
 
     let query = 'SELECT * FROM workouts WHERE user_id = $1';
     if (!includeIncomplete) {
-      query += ' AND is_complete = true';
+      query += ' AND is_complete = 1';
     }
     query += ' ORDER BY date DESC LIMIT $2';
 
@@ -299,7 +483,7 @@ app.get('/api/workouts/active', async (req, res) => {
     const userId = await getUserId(req);
     const workout = await db.queryOne(
       `SELECT * FROM workouts
-       WHERE user_id = $1 AND is_complete = false
+       WHERE user_id = $1 AND is_complete = 0
        ORDER BY created_at DESC LIMIT 1`,
       [userId]
     );
@@ -540,7 +724,7 @@ app.get('/api/exercises/:exerciseId/history', async (req, res) => {
       `SELECT w.id as workout_id, w.date, ws.set_number, ws.reps, ws.weight
        FROM workouts w
        JOIN workout_sets ws ON w.id = ws.workout_id
-       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = true AND w.date >= $3
+       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = 1 AND w.date >= $3
        ORDER BY w.date DESC, ws.set_number`,
       [userId, req.params.exerciseId, startDate.toISOString().split('T')[0]]
     );
@@ -584,7 +768,7 @@ app.get('/api/exercises/:exerciseId/previous', async (req, res) => {
       `SELECT w.id, w.date
        FROM workouts w
        JOIN workout_sets ws ON w.id = ws.workout_id
-       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = true
+       WHERE w.user_id = $1 AND ws.exercise_id = $2 AND w.is_complete = 1
        GROUP BY w.id, w.date
        ORDER BY w.date DESC
        LIMIT 1`,
@@ -718,14 +902,14 @@ app.get('/api/dashboard', async (req, res) => {
     weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const weeklyCountResult = await db.queryOne(
       `SELECT COUNT(*) as count FROM workouts
-       WHERE user_id = $1 AND is_complete = true AND date >= $2`,
+       WHERE user_id = $1 AND is_complete = 1 AND date >= $2`,
       [userId, weekStart.toISOString().split('T')[0]]
     );
 
     // Recent workouts
     const recentWorkouts = await db.query(
       `SELECT * FROM workouts
-       WHERE user_id = $1 AND is_complete = true
+       WHERE user_id = $1 AND is_complete = 1
        ORDER BY date DESC LIMIT 3`,
       [userId]
     );
@@ -747,7 +931,7 @@ app.get('/api/dashboard', async (req, res) => {
        FROM workout_sets ws
        JOIN workouts w ON ws.workout_id = w.id
        JOIN exercises e ON ws.exercise_id = e.id
-       WHERE w.user_id = $1 AND w.is_complete = true AND w.date >= $2
+       WHERE w.user_id = $1 AND w.is_complete = 1 AND w.date >= $2
        GROUP BY e.primary_muscles`,
       [userId, weekStart.toISOString().split('T')[0]]
     );
@@ -784,7 +968,7 @@ app.get('/api/stats/muscle-groups', async (req, res) => {
        FROM workout_sets ws
        JOIN workouts w ON ws.workout_id = w.id
        JOIN exercises e ON ws.exercise_id = e.id
-       WHERE w.user_id = $1 AND w.is_complete = true AND w.date >= $2
+       WHERE w.user_id = $1 AND w.is_complete = 1 AND w.date >= $2
        GROUP BY e.primary_muscles`,
       [userId, startDate.toISOString().split('T')[0]]
     );
@@ -807,7 +991,7 @@ app.get('/api/stats/muscle-groups', async (req, res) => {
 async function calculateStreak(userId: string): Promise<number> {
   const workouts = await db.query(
     `SELECT DISTINCT date FROM workouts
-     WHERE user_id = $1 AND is_complete = true
+     WHERE user_id = $1 AND is_complete = 1
      ORDER BY date DESC`,
     [userId]
   );
@@ -905,11 +1089,11 @@ function checkImbalances(muscleGroups: { muscleGroup: string; volume: number }[]
 }
 
 // Initialize database and start server
-async function startServer() {
+function startServer() {
   try {
-    await initializeDatabase();
-    await seedExercises();
-    await createDefaultUser();
+    initializeDatabase();
+    seedExercises();
+    createDefaultUser();
 
     app.listen(PORT, () => {
       console.log(`Server running on http://localhost:${PORT}`);

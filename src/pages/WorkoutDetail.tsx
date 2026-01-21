@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Clock, Calendar, Edit2, Check, X } from 'lucide-react';
-import { workoutApi } from '../api/client';
-import type { Workout, WorkoutSet, MuscleGroup } from '../types';
+import { ChevronLeft, Clock, Calendar, Edit2, Check, X, Trash2, Plus } from 'lucide-react';
+import { workoutApi, setApi } from '../api/client';
+import type { RawWorkout, RawWorkoutSet } from '../api/client';
+import type { MuscleGroup } from '../types';
 import { format, parseISO } from 'date-fns';
 
-interface WorkoutWithSets extends Workout {
-  sets: (WorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[];
+interface WorkoutWithSets extends RawWorkout {
+  sets: (RawWorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[];
 }
 
 export function WorkoutDetail() {
@@ -16,6 +17,9 @@ export function WorkoutDetail() {
   const [loading, setLoading] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingSetId, setEditingSetId] = useState<string | null>(null);
+  const [addingSetToExercise, setAddingSetToExercise] = useState<string | null>(null);
 
   useEffect(() => {
     if (!workoutId) return;
@@ -47,6 +51,89 @@ export function WorkoutDetail() {
       setIsEditingName(false);
     } catch (error) {
       console.error('Failed to rename workout:', error);
+    }
+  };
+
+  const handleUpdateSet = async (setId: string, reps: number, weight: number) => {
+    if (!workout) return;
+
+    try {
+      await setApi.update(setId, { reps, weight });
+      setWorkout({
+        ...workout,
+        sets: workout.sets.map(s => s.id === setId ? { ...s, reps, weight } : s),
+      });
+      setEditingSetId(null);
+    } catch (error) {
+      console.error('Failed to update set:', error);
+    }
+  };
+
+  const handleDeleteSet = async (setId: string) => {
+    if (!workout) return;
+    if (!window.confirm('Delete this set?')) return;
+
+    try {
+      await setApi.delete(setId);
+      setWorkout({
+        ...workout,
+        sets: workout.sets.filter(s => s.id !== setId),
+      });
+    } catch (error) {
+      console.error('Failed to delete set:', error);
+    }
+  };
+
+  const handleAddSet = async (exerciseId: string, reps: number, weight: number) => {
+    if (!workout) return;
+
+    const exerciseSets = workout.sets.filter(s => s.exercise_id === exerciseId);
+    const setNumber = exerciseSets.length + 1;
+
+    try {
+      const newSet = await setApi.create(workout.id, {
+        exerciseId,
+        setNumber,
+        reps,
+        weight,
+      });
+
+      // Get exercise info from existing sets
+      const existingSet = exerciseSets[0];
+
+      setWorkout({
+        ...workout,
+        sets: [...workout.sets, {
+          ...newSet,
+          exercise_id: exerciseId,
+          exercise_name: existingSet?.exercise_name || '',
+          primaryMuscles: existingSet?.primaryMuscles || [],
+        }],
+      });
+      setAddingSetToExercise(null);
+    } catch (error) {
+      console.error('Failed to add set:', error);
+    }
+  };
+
+  const handleRemoveExercise = async (exerciseId: string) => {
+    if (!workout) return;
+
+    const exerciseSets = workout.sets.filter(s => s.exercise_id === exerciseId);
+    if (!window.confirm(`Remove this exercise and all ${exerciseSets.length} sets?`)) return;
+
+    try {
+      // Delete all sets for this exercise
+      for (const set of exerciseSets) {
+        await setApi.delete(set.id);
+      }
+
+      setWorkout({
+        ...workout,
+        sets: workout.sets.filter(s => s.exercise_id !== exerciseId),
+      });
+    } catch (error) {
+      console.error('Failed to remove exercise:', error);
     }
   };
 
@@ -82,6 +169,7 @@ export function WorkoutDetail() {
     const key = set.exercise_id;
     if (!acc[key]) {
       acc[key] = {
+        exerciseId: key,
         exerciseName: set.exercise_name,
         primaryMuscles: set.primaryMuscles,
         sets: [],
@@ -89,7 +177,7 @@ export function WorkoutDetail() {
     }
     acc[key].sets.push(set);
     return acc;
-  }, {} as Record<string, { exerciseName: string; primaryMuscles: MuscleGroup[]; sets: typeof workout.sets }>);
+  }, {} as Record<string, { exerciseId: string; exerciseName: string; primaryMuscles: MuscleGroup[]; sets: typeof workout.sets }>);
 
   const totalVolume = workout.sets.reduce((acc, s) => acc + s.reps * s.weight, 0);
 
@@ -98,9 +186,16 @@ export function WorkoutDetail() {
       {/* Header */}
       <header className="sticky top-0 bg-slate-900 border-b border-slate-700 p-4 z-10">
         <div className="max-w-lg mx-auto">
-          <div className="flex items-center gap-3 mb-2">
+          <div className="flex items-center justify-between mb-2">
             <button onClick={() => navigate('/history')} className="p-2 -ml-2">
               <ChevronLeft size={24} />
+            </button>
+            <button
+              onClick={() => setIsEditMode(!isEditMode)}
+              className={`btn py-2 px-4 ${isEditMode ? 'btn-success' : 'btn-secondary'}`}
+            >
+              <Edit2 size={18} />
+              {isEditMode ? 'Done' : 'Edit'}
             </button>
           </div>
 
@@ -181,27 +276,76 @@ export function WorkoutDetail() {
                   <h3 className="font-bold text-lg">{data.exerciseName}</h3>
                   <p className="text-sm text-blue-400">{data.primaryMuscles.join(', ')}</p>
                 </div>
-                <div className="text-right text-sm text-slate-400">
-                  <p>{data.sets.length} sets</p>
-                  <p>{exerciseVolume.toLocaleString()} lbs</p>
+                <div className="flex items-center gap-2">
+                  <div className="text-right text-sm text-slate-400">
+                    <p>{data.sets.length} sets</p>
+                    <p>{exerciseVolume.toLocaleString()} lbs</p>
+                  </div>
+                  {isEditMode && (
+                    <button
+                      onClick={() => handleRemoveExercise(exerciseId)}
+                      className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Remove exercise"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-2">
                 {data.sets.map((set, index) => (
-                  <div
-                    key={set.id}
-                    className="flex items-center gap-3 p-2 bg-slate-700/50 rounded-lg"
-                  >
-                    <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
-                      {index + 1}
-                    </span>
-                    <span className="font-medium">
-                      {set.weight} lbs × {set.reps}
-                    </span>
-                  </div>
+                  editingSetId === set.id ? (
+                    <EditableSetRow
+                      key={set.id}
+                      set={set}
+                      index={index}
+                      onSave={(reps, weight) => handleUpdateSet(set.id, reps, weight)}
+                      onCancel={() => setEditingSetId(null)}
+                      onDelete={() => handleDeleteSet(set.id)}
+                    />
+                  ) : (
+                    <div
+                      key={set.id}
+                      onClick={() => isEditMode && setEditingSetId(set.id)}
+                      className={`flex items-center justify-between p-2 bg-slate-700/50 rounded-lg ${
+                        isEditMode ? 'cursor-pointer hover:bg-slate-700' : ''
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
+                          {index + 1}
+                        </span>
+                        <span className="font-medium">
+                          {set.weight} lbs × {set.reps}
+                        </span>
+                      </div>
+                      {isEditMode && (
+                        <Edit2 size={16} className="text-slate-500" />
+                      )}
+                    </div>
+                  )
                 ))}
               </div>
+
+              {/* Add Set Button */}
+              {isEditMode && (
+                addingSetToExercise === exerciseId ? (
+                  <AddSetForm
+                    lastSet={data.sets[data.sets.length - 1]}
+                    onAdd={(reps, weight) => handleAddSet(exerciseId, reps, weight)}
+                    onCancel={() => setAddingSetToExercise(null)}
+                  />
+                ) : (
+                  <button
+                    onClick={() => setAddingSetToExercise(exerciseId)}
+                    className="btn btn-secondary w-full mt-3 py-2"
+                  >
+                    <Plus size={18} />
+                    Add Set
+                  </button>
+                )
+              )}
             </div>
           );
         })}
@@ -213,6 +357,105 @@ export function WorkoutDetail() {
             <p className="text-slate-400">{workout.notes}</p>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+interface EditableSetRowProps {
+  set: RawWorkoutSet;
+  index: number;
+  onSave: (reps: number, weight: number) => void;
+  onCancel: () => void;
+  onDelete: () => void;
+}
+
+function EditableSetRow({ set, index, onSave, onCancel, onDelete }: EditableSetRowProps) {
+  const [editReps, setEditReps] = useState(set.reps);
+  const [editWeight, setEditWeight] = useState(set.weight);
+
+  return (
+    <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
+          {index + 1}
+        </span>
+        <input
+          type="number"
+          value={editWeight}
+          onChange={(e) => setEditWeight(Number(e.target.value) || 0)}
+          className="w-20 h-10 bg-slate-800 border border-slate-600 rounded text-center font-bold"
+        />
+        <span className="text-slate-400">lbs ×</span>
+        <input
+          type="number"
+          value={editReps}
+          onChange={(e) => setEditReps(Math.max(1, Number(e.target.value) || 1))}
+          className="w-16 h-10 bg-slate-800 border border-slate-600 rounded text-center font-bold"
+        />
+        <span className="text-slate-400">reps</span>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onSave(editReps, editWeight)}
+          className="btn btn-success flex-1 py-2"
+        >
+          <Check size={16} />
+          Save
+        </button>
+        <button onClick={onCancel} className="btn btn-secondary py-2 px-3">
+          <X size={16} />
+        </button>
+        <button onClick={onDelete} className="btn btn-danger py-2 px-3">
+          <Trash2 size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface AddSetFormProps {
+  lastSet?: RawWorkoutSet;
+  onAdd: (reps: number, weight: number) => void;
+  onCancel: () => void;
+}
+
+function AddSetForm({ lastSet, onAdd, onCancel }: AddSetFormProps) {
+  const [reps, setReps] = useState(lastSet?.reps || 10);
+  const [weight, setWeight] = useState(lastSet?.weight || 45);
+
+  return (
+    <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 mt-3">
+      <p className="text-sm text-green-400 mb-2">Add new set</p>
+      <div className="flex items-center gap-2 mb-3">
+        <input
+          type="number"
+          value={weight}
+          onChange={(e) => setWeight(Number(e.target.value) || 0)}
+          className="w-20 h-10 bg-slate-800 border border-slate-600 rounded text-center font-bold"
+          placeholder="Weight"
+        />
+        <span className="text-slate-400">lbs ×</span>
+        <input
+          type="number"
+          value={reps}
+          onChange={(e) => setReps(Math.max(1, Number(e.target.value) || 1))}
+          className="w-16 h-10 bg-slate-800 border border-slate-600 rounded text-center font-bold"
+          placeholder="Reps"
+        />
+        <span className="text-slate-400">reps</span>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={() => onAdd(reps, weight)}
+          className="btn btn-success flex-1 py-2"
+        >
+          <Plus size={16} />
+          Add
+        </button>
+        <button onClick={onCancel} className="btn btn-secondary py-2 px-3">
+          <X size={16} />
+        </button>
       </div>
     </div>
   );

@@ -127,7 +127,7 @@ export function Stats() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={muscleGroups}
+                      data={muscleGroups as any[]}
                       dataKey="percentage"
                       nameKey="muscleGroup"
                       cx="50%"

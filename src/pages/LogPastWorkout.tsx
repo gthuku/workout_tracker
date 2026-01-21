@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, Check, X, Trash2, Save, Calendar, Clock } from 'lucide-react';
+import { ChevronLeft, Plus, X, Trash2, Save, Calendar, Clock } from 'lucide-react';
 import { workoutApi, setApi, exerciseApi } from '../api/client';
-import { ExerciseSelector } from '../components/ExerciseSelector';
-import type { Exercise, WorkoutSet } from '../types';
+import type { Exercise } from '../types';
 
 interface PastWorkoutExercise {
   exercise: Exercise;

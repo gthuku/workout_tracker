@@ -20,6 +20,7 @@ interface WorkoutStore {
   startWorkout: (options?: { name?: string; date?: string; duration?: number; isComplete?: boolean }) => Promise<void>;
   resumeWorkout: () => Promise<void>;
   addExercise: (exercise: Exercise) => Promise<void>;
+  removeExercise: (exerciseId: string) => Promise<void>;
   addSet: (exerciseId: string, reps: number, weight: number) => Promise<{ isNewPR: boolean }>;
   updateSet: (setId: string, reps: number, weight: number) => Promise<void>;
   deleteSet: (setId: string) => Promise<void>;
@@ -61,20 +62,21 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         const exerciseInfo = new Map<string, { name: string; primaryMuscles: MuscleGroup[] }>();
 
         for (const setData of workout.sets) {
-          const existing = exerciseMap.get(setData.exercise_id) || [];
+          const exerciseId = setData.exercise_id;
+          const existing = exerciseMap.get(exerciseId) || [];
           existing.push({
             id: setData.id,
             workoutId: setData.workout_id,
-            exerciseId: setData.exercise_id,
+            exerciseId: exerciseId,
             setNumber: setData.set_number,
             reps: setData.reps,
             weight: setData.weight,
             createdAt: setData.created_at,
           });
-          exerciseMap.set(setData.exercise_id, existing);
-          exerciseInfo.set(setData.exercise_id, {
-            name: setData.exercise_name,
-            primaryMuscles: setData.primaryMuscles,
+          exerciseMap.set(exerciseId, existing);
+          exerciseInfo.set(exerciseId, {
+            name: setData.exercise_name || '',
+            primaryMuscles: setData.primaryMuscles || [],
           });
         }
 
@@ -104,7 +106,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
             name: workout.name,
             duration: workout.duration,
             notes: workout.notes,
-            isComplete: workout.isComplete,
+            isComplete: workout.isComplete || Boolean(workout.is_complete),
             createdAt: workout.created_at,
           },
           workoutExercises,
@@ -147,6 +149,25 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     }
   },
 
+  removeExercise: async (exerciseId: string) => {
+    const { workoutExercises } = get();
+    const exerciseData = workoutExercises.find((we) => we.exercise.id === exerciseId);
+    if (!exerciseData) return;
+
+    try {
+      // Delete all sets for this exercise
+      for (const s of exerciseData.sets) {
+        await setApi.delete(s.id);
+      }
+
+      set({
+        workoutExercises: workoutExercises.filter((we) => we.exercise.id !== exerciseId),
+      });
+    } catch (error) {
+      set({ error: (error as Error).message });
+    }
+  },
+
   addSet: async (exerciseId: string, reps: number, weight: number) => {
     const { activeWorkout, workoutExercises } = get();
     if (!activeWorkout) return { isNewPR: false };
@@ -158,12 +179,23 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     const setNumber = currentSets.length + 1;
 
     try {
-      const newSet = await setApi.create(activeWorkout.id, {
+      const rawSet = await setApi.create(activeWorkout.id, {
         exerciseId,
         setNumber,
         reps,
         weight,
       });
+
+      // Convert raw API response to camelCase
+      const newSet: WorkoutSet = {
+        id: rawSet.id,
+        workoutId: rawSet.workout_id,
+        exerciseId: rawSet.exercise_id,
+        setNumber: rawSet.set_number,
+        reps: rawSet.reps,
+        weight: rawSet.weight,
+        createdAt: rawSet.created_at,
+      };
 
       const updatedExercises = [...workoutExercises];
       updatedExercises[exerciseIndex] = {

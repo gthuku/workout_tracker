@@ -12,6 +12,32 @@ import type {
   UserProfile,
 } from '../types';
 
+// Raw API response types (snake_case from server)
+export interface RawWorkoutSet {
+  id: string;
+  workout_id: string;
+  exercise_id: string;
+  set_number: number;
+  reps: number;
+  weight: number;
+  created_at: string;
+  exercise_name?: string;
+  primaryMuscles?: MuscleGroup[];
+}
+
+export interface RawWorkout {
+  id: string;
+  user_id: string;
+  date: string;
+  name?: string;
+  duration?: number;
+  notes?: string;
+  is_complete: boolean;
+  created_at: string;
+  sets?: RawWorkoutSet[];
+  isComplete?: boolean; // Sometimes mapped
+}
+
 const BASE_URL = '/api';
 
 // Get current user ID from localStorage
@@ -47,6 +73,35 @@ export const profileApi = {
     }),
   delete: (id: string) =>
     fetchJson(`/profiles/${id}`, { method: 'DELETE' }),
+};
+
+// Auth API
+export const authApi = {
+  register: (data: { username: string; email?: string; password: string; displayName?: string }) =>
+    fetchJson<User>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  login: (username: string, password: string) =>
+    fetchJson<User & { needsPassword?: boolean }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    }),
+  setPassword: (userId: string, password: string) =>
+    fetchJson<{ success: boolean }>('/auth/set-password', {
+      method: 'POST',
+      body: JSON.stringify({ userId, password }),
+    }),
+  updateEmail: (email: string) =>
+    fetchJson<{ success: boolean }>('/auth/email', {
+      method: 'PATCH',
+      body: JSON.stringify({ email }),
+    }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    fetchJson<{ success: boolean }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
 };
 
 // User API
@@ -88,13 +143,13 @@ export const exerciseApi = {
 // Workout API
 export const workoutApi = {
   list: (limit = 10, includeIncomplete = false) =>
-    fetchJson<Workout[]>(`/workouts?limit=${limit}&includeIncomplete=${includeIncomplete}`),
+    fetchJson<RawWorkout[]>(`/workouts?limit=${limit}&includeIncomplete=${includeIncomplete}`),
   getActive: () =>
-    fetchJson<(Workout & { sets: (WorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[] }) | null>(
+    fetchJson<(RawWorkout & { sets: RawWorkoutSet[] }) | null>(
       '/workouts/active'
     ),
   get: (id: string) =>
-    fetchJson<Workout & { sets: (WorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[] }>(
+    fetchJson<RawWorkout & { sets: RawWorkoutSet[] }>(
       `/workouts/${id}`
     ),
   create: (data?: { name?: string; date?: string; duration?: number; isComplete?: boolean }) =>
@@ -116,12 +171,12 @@ export const workoutApi = {
 // Workout Set API
 export const setApi = {
   create: (workoutId: string, data: { exerciseId: string; setNumber: number; reps: number; weight: number }) =>
-    fetchJson<WorkoutSet>(`/workouts/${workoutId}/sets`, {
+    fetchJson<RawWorkoutSet>(`/workouts/${workoutId}/sets`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
   update: (id: string, data: { reps: number; weight: number }) =>
-    fetchJson<WorkoutSet>(`/sets/${id}`, {
+    fetchJson<RawWorkoutSet>(`/sets/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
     }),

@@ -2,12 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Clock, Dumbbell, Calendar, Edit2, Check, X, Trash2, Trash } from 'lucide-react';
 import { workoutApi } from '../api/client';
-import type { Workout } from '../types';
+import type { RawWorkout } from '../api/client';
 import { format, parseISO } from 'date-fns';
 
 export function WorkoutHistory() {
   const navigate = useNavigate();
-  const [workouts, setWorkouts] = useState<Workout[]>([]);
+  const [workouts, setWorkouts] = useState<RawWorkout[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editedName, setEditedName] = useState('');
