@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronLeft, Plus, X, Trash2, Save, Calendar, Clock } from 'lucide-react';
 import { workoutApi, setApi, exerciseApi } from '../api/client';
+import { CustomExerciseForm } from '../components/CustomExerciseForm';
 import type { Exercise } from '../types';
 import { WORKOUT_LIMITS } from '../constants/workout';
 
@@ -352,6 +353,7 @@ function ExerciseSelectorWrapper({
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [showCustomForm, setShowCustomForm] = useState(false);
 
   const loadExercises = useCallback(async () => {
     try {
@@ -392,6 +394,17 @@ function ExerciseSelectorWrapper({
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500" />
             </div>
+          ) : exercises.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <p>No exercises found</p>
+              <button
+                onClick={() => setShowCustomForm(true)}
+                className="btn btn-secondary mt-4"
+              >
+                <Plus size={20} />
+                Create Custom Exercise
+              </button>
+            </div>
           ) : (
             <div className="space-y-2">
               {exercises.map((exercise) => {
@@ -417,8 +430,30 @@ function ExerciseSelectorWrapper({
               })}
             </div>
           )}
+
+          {/* Create Custom Exercise Button */}
+          {!loading && exercises.length > 0 && (
+            <button
+              onClick={() => setShowCustomForm(true)}
+              className="btn btn-secondary w-full mt-4"
+            >
+              <Plus size={20} />
+              Create Custom Exercise
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Custom Exercise Form */}
+      {showCustomForm && (
+        <CustomExerciseForm
+          onClose={() => setShowCustomForm(false)}
+          onCreated={(exercise) => {
+            setShowCustomForm(false);
+            onSelect(exercise);
+          }}
+        />
+      )}
     </div>
   );
 }

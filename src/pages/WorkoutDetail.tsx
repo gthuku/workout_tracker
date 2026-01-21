@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, Clock, Calendar, Edit2, Check, X, Trash2, Plus } from 'lucide-react';
-import { workoutApi, setApi } from '../api/client';
+import { ChevronLeft, Clock, Calendar, Edit2, Check, X, Trash2, Plus, Search } from 'lucide-react';
+import { workoutApi, setApi, exerciseApi } from '../api/client';
+import { CustomExerciseForm } from '../components/CustomExerciseForm';
 import type { RawWorkout, RawWorkoutSet } from '../api/client';
-import type { MuscleGroup } from '../types';
+import type { Exercise, MuscleGroup } from '../types';
 import { format, parseISO } from 'date-fns';
 import { WORKOUT_LIMITS } from '../constants/workout';
 
@@ -21,6 +22,7 @@ export function WorkoutDetail() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [addingSetToExercise, setAddingSetToExercise] = useState<string | null>(null);
+  const [showExerciseSelector, setShowExerciseSelector] = useState(false);
 
   const loadWorkout = useCallback(async () => {
     if (!workoutId) return;
@@ -135,6 +137,36 @@ export function WorkoutDetail() {
       });
     } catch (error) {
       console.error('Failed to remove exercise:', error);
+    }
+  };
+
+  const handleAddNewExercise = async (exercise: Exercise) => {
+    if (!workout) return;
+
+    const isCardio = exercise.equipment === 'Cardio';
+
+    try {
+      const newSet = await setApi.create(workout.id, {
+        exerciseId: exercise.id,
+        setNumber: 1,
+        reps: isCardio ? undefined : WORKOUT_LIMITS.DEFAULT_REPS,
+        weight: isCardio ? undefined : WORKOUT_LIMITS.DEFAULT_WEIGHT,
+        duration: isCardio ? 30 : undefined,
+      });
+
+      setWorkout({
+        ...workout,
+        sets: [...workout.sets, {
+          ...newSet,
+          exercise_id: exercise.id,
+          exercise_name: exercise.name,
+          primaryMuscles: exercise.primaryMuscles,
+          equipment: exercise.equipment,
+        }],
+      });
+      setShowExerciseSelector(false);
+    } catch (error) {
+      console.error('Failed to add exercise:', error);
     }
   };
 
@@ -351,6 +383,17 @@ export function WorkoutDetail() {
           );
         })}
 
+        {/* Add Exercise Button */}
+        {isEditMode && (
+          <button
+            onClick={() => setShowExerciseSelector(true)}
+            className="btn btn-primary w-full py-4 text-lg"
+          >
+            <Plus size={24} />
+            Add Exercise
+          </button>
+        )}
+
         {/* Notes */}
         {workout.notes && (
           <div className="card">
@@ -359,6 +402,15 @@ export function WorkoutDetail() {
           </div>
         )}
       </div>
+
+      {/* Exercise Selector Modal */}
+      {showExerciseSelector && (
+        <ExerciseSelectorModal
+          existingExerciseIds={Object.keys(exerciseGroups)}
+          onSelect={handleAddNewExercise}
+          onClose={() => setShowExerciseSelector(false)}
+        />
+      )}
     </div>
   );
 }
@@ -458,6 +510,131 @@ function AddSetForm({ lastSet, onAdd, onCancel }: AddSetFormProps) {
           <X size={16} />
         </button>
       </div>
+    </div>
+  );
+}
+
+interface ExerciseSelectorModalProps {
+  existingExerciseIds: string[];
+  onSelect: (exercise: Exercise) => void;
+  onClose: () => void;
+}
+
+function ExerciseSelectorModal({ existingExerciseIds, onSelect, onClose }: ExerciseSelectorModalProps) {
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showCustomForm, setShowCustomForm] = useState(false);
+
+  const loadExercises = useCallback(async () => {
+    try {
+      const data = await exerciseApi.list({ search: search || undefined });
+      setExercises(data);
+    } catch (error) {
+      console.error('Failed to load exercises:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [search]);
+
+  useEffect(() => {
+    loadExercises();
+  }, [loadExercises]);
+
+  return (
+    <div className="fixed inset-0 bg-black/50 z-50 flex flex-col">
+      <div className="bg-slate-900 flex-1 flex flex-col max-h-screen">
+        <div className="p-4 border-b border-slate-700">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold">Add Exercise</h2>
+            <button onClick={onClose} className="p-2">
+              <X size={24} />
+            </button>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={20} />
+            <input
+              type="text"
+              placeholder="Search exercises..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="input w-full !pl-12"
+            />
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500" />
+            </div>
+          ) : exercises.length === 0 ? (
+            <div className="text-center py-12 text-slate-400">
+              <p>No exercises found</p>
+              <button
+                onClick={() => setShowCustomForm(true)}
+                className="btn btn-secondary mt-4"
+              >
+                <Plus size={20} />
+                Create Custom Exercise
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {exercises.map((exercise) => {
+                const isAdded = existingExerciseIds.includes(exercise.id);
+                return (
+                  <button
+                    key={exercise.id}
+                    onClick={() => !isAdded && onSelect(exercise)}
+                    disabled={isAdded}
+                    className={`w-full text-left p-4 rounded-lg transition-colors ${
+                      isAdded
+                        ? 'bg-slate-800/50 opacity-50 cursor-not-allowed'
+                        : 'bg-slate-800 hover:bg-slate-700'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">{exercise.name}</p>
+                        <p className="text-sm text-blue-400">
+                          {exercise.primaryMuscles.join(', ')}
+                        </p>
+                      </div>
+                      <span className="text-xs text-slate-500 bg-slate-700 px-2 py-1 rounded">
+                        {exercise.equipment}
+                      </span>
+                    </div>
+                    {isAdded && <p className="text-xs text-slate-500 mt-1">Already added</p>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Create Custom Exercise Button */}
+          {!loading && exercises.length > 0 && (
+            <button
+              onClick={() => setShowCustomForm(true)}
+              className="btn btn-secondary w-full mt-4"
+            >
+              <Plus size={20} />
+              Create Custom Exercise
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Custom Exercise Form */}
+      {showCustomForm && (
+        <CustomExerciseForm
+          onClose={() => setShowCustomForm(false)}
+          onCreated={(exercise) => {
+            setShowCustomForm(false);
+            onSelect(exercise);
+          }}
+        />
+      )}
     </div>
   );
 }
