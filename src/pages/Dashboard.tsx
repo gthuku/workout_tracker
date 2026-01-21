@@ -25,7 +25,8 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
-  const { activeWorkout, resumeWorkout, startWorkout } = useWorkoutStore();
+  const [startingWorkout, setStartingWorkout] = useState(false);
+  const { activeWorkout, resumeWorkout, startWorkout, error, clearError } = useWorkoutStore();
 
   useEffect(() => {
     async function loadData() {
@@ -45,8 +46,16 @@ export function Dashboard() {
   }, [resumeWorkout]);
 
   const handleStartWorkout = async () => {
-    await startWorkout();
-    navigate('/workout');
+    setStartingWorkout(true);
+    try {
+      await startWorkout();
+      navigate('/workout');
+    } catch (error) {
+      console.error('Failed to start workout:', error);
+      // Error is already handled in the store, but we can show a toast or alert here if needed
+    } finally {
+      setStartingWorkout(false);
+    }
   };
 
   if (loading) {
@@ -63,6 +72,21 @@ export function Dashboard() {
       <div className="text-center">
         <h1 className="text-2xl font-bold">Workout Tracker</h1>
       </div>
+
+      {/* Error Display */}
+      {error && (
+        <div className="card border-red-500/30 bg-red-500/10">
+          <div className="flex items-center gap-2 text-red-400">
+            <span className="text-sm">Error: {error}</span>
+            <button
+              onClick={clearError}
+              className="ml-auto text-red-400 hover:text-red-300"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats Row */}
       <div className="flex gap-4">
@@ -100,10 +124,15 @@ export function Dashboard() {
         <div className="space-y-3">
           <button
             onClick={handleStartWorkout}
-            className="btn btn-primary w-full py-6 text-xl font-bold"
+            disabled={startingWorkout}
+            className="btn btn-primary w-full py-6 text-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            <Play size={28} />
-            Start Workout
+            {startingWorkout ? (
+              <div className="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-white" />
+            ) : (
+              <Play size={28} />
+            )}
+            {startingWorkout ? 'Starting...' : 'Start Workout'}
           </button>
           <button
             onClick={() => navigate('/log-past')}

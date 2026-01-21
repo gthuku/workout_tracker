@@ -1,0 +1,7 @@
+name: workout-log
+runtime: nodejs
+description: Workout Log application infrastructure - EC2 + S3 deployment
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-typescript

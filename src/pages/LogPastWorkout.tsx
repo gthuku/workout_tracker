@@ -5,9 +5,16 @@ import { workoutApi, setApi, exerciseApi } from '../api/client';
 import type { Exercise } from '../types';
 import { WORKOUT_LIMITS } from '../constants/workout';
 
+interface PastWorkoutSet {
+  reps?: number;
+  weight?: number;
+  duration?: number;
+  id?: string;
+}
+
 interface PastWorkoutExercise {
   exercise: Exercise;
-  sets: { reps: number; weight: number; id?: string }[];
+  sets: PastWorkoutSet[];
 }
 
 export function LogPastWorkout() {
@@ -25,8 +32,13 @@ export function LogPastWorkout() {
     // Check if already added
     if (exercises.some(e => e.exercise.id === exercise.id)) return;
 
+    const isCardio = exercise.equipment === 'Cardio';
+    const initialSet = isCardio
+      ? { duration: 30 } // Default 30 minutes for cardio
+      : { reps: WORKOUT_LIMITS.DEFAULT_REPS, weight: WORKOUT_LIMITS.DEFAULT_WEIGHT };
+
     setExercises([
-      { exercise, sets: [{ reps: WORKOUT_LIMITS.DEFAULT_REPS, weight: WORKOUT_LIMITS.DEFAULT_WEIGHT }] },
+      { exercise, sets: [initialSet] },
       ...exercises,
     ]);
     setShowExerciseSelector(false);
@@ -34,15 +46,19 @@ export function LogPastWorkout() {
 
   const handleAddSet = (exerciseIndex: number) => {
     const updated = [...exercises];
+    const exercise = updated[exerciseIndex].exercise;
     const lastSet = updated[exerciseIndex].sets[updated[exerciseIndex].sets.length - 1];
-    updated[exerciseIndex].sets.push({
-      reps: lastSet?.reps || WORKOUT_LIMITS.DEFAULT_REPS,
-      weight: lastSet?.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT,
-    });
+    const isCardio = exercise.equipment === 'Cardio';
+
+    const newSet = isCardio
+      ? { duration: lastSet?.duration || 30 }
+      : { reps: lastSet?.reps || WORKOUT_LIMITS.DEFAULT_REPS, weight: lastSet?.weight || WORKOUT_LIMITS.DEFAULT_WEIGHT };
+
+    updated[exerciseIndex].sets.push(newSet);
     setExercises(updated);
   };
 
-  const handleUpdateSet = (exerciseIndex: number, setIndex: number, field: 'reps' | 'weight', value: number) => {
+  const handleUpdateSet = (exerciseIndex: number, setIndex: number, field: 'reps' | 'weight' | 'duration', value: number) => {
     const updated = [...exercises];
     updated[exerciseIndex].sets[setIndex][field] = value;
     setExercises(updated);
@@ -81,13 +97,15 @@ export function LogPastWorkout() {
 
       // Save all sets to the database
       for (const exercise of exercises) {
+        const isCardio = exercise.exercise.equipment === 'Cardio';
         for (let i = 0; i < exercise.sets.length; i++) {
           const set = exercise.sets[i];
           await setApi.create(workout.id, {
             exerciseId: exercise.exercise.id,
             setNumber: i + 1,
-            reps: set.reps,
-            weight: set.weight,
+            reps: isCardio ? undefined : set.reps,
+            weight: isCardio ? undefined : set.weight,
+            duration: isCardio ? set.duration : undefined,
           });
         }
       }
@@ -216,50 +234,78 @@ export function LogPastWorkout() {
             <div className="space-y-2 mb-4">
               <div className="grid grid-cols-12 gap-2 text-xs text-slate-400 px-2">
                 <div className="col-span-2">SET</div>
-                <div className="col-span-4 text-center">WEIGHT (lbs)</div>
-                <div className="col-span-4 text-center">REPS</div>
+                {exerciseData.exercise.equipment === 'Cardio' ? (
+                  <div className="col-span-8 text-center">DURATION (minutes)</div>
+                ) : (
+                  <>
+                    <div className="col-span-4 text-center">WEIGHT (lbs)</div>
+                    <div className="col-span-4 text-center">REPS</div>
+                  </>
+                )}
                 <div className="col-span-2"></div>
               </div>
 
-              {exerciseData.sets.map((set, setIndex) => (
-                <div key={setIndex} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-2">
-                    <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
-                      {setIndex + 1}
-                    </span>
+              {exerciseData.sets.map((set, setIndex) => {
+                const isCardio = exerciseData.exercise.equipment === 'Cardio';
+
+                return (
+                  <div key={setIndex} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-2">
+                      <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
+                        {setIndex + 1}
+                      </span>
+                    </div>
+                    {isCardio ? (
+                      <div className="col-span-8">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            value={set.duration || 30}
+                            onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'duration', Number(e.target.value))}
+                            className="flex-1 h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
+                            min="1"
+                            max="300"
+                          />
+                          <span className="text-slate-400 text-sm">min</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="col-span-4">
+                          <select
+                            value={set.weight || 0}
+                            onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'weight', Number(e.target.value))}
+                            className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
+                          >
+                            {Array.from({ length: WORKOUT_LIMITS.MAX_WEIGHT + 1 }, (_, i) => i).map(val => (
+                              <option key={val} value={val}>{val}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-4">
+                          <select
+                            value={set.reps || 1}
+                            onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'reps', Number(e.target.value))}
+                            className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
+                          >
+                            {Array.from({ length: WORKOUT_LIMITS.MAX_REPS }, (_, i) => i + 1).map(val => (
+                              <option key={val} value={val}>{val}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </>
+                    )}
+                    <div className="col-span-2 flex justify-end">
+                      <button
+                        onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
+                        className="p-2 text-slate-400 hover:text-red-500"
+                      >
+                        <X size={16} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="col-span-4">
-                    <select
-                      value={set.weight}
-                      onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'weight', Number(e.target.value))}
-                      className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
-                    >
-                      {Array.from({ length: WORKOUT_LIMITS.MAX_WEIGHT + 1 }, (_, i) => i).map(val => (
-                        <option key={val} value={val}>{val}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-4">
-                    <select
-                      value={set.reps}
-                      onChange={(e) => handleUpdateSet(exerciseIndex, setIndex, 'reps', Number(e.target.value))}
-                      className="w-full h-10 bg-slate-700 border border-slate-600 rounded-lg text-center text-sm font-bold focus:border-blue-500 outline-none"
-                    >
-                      {Array.from({ length: WORKOUT_LIMITS.MAX_REPS }, (_, i) => i + 1).map(val => (
-                        <option key={val} value={val}>{val}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="col-span-2 flex justify-end">
-                    <button
-                      onClick={() => handleDeleteSet(exerciseIndex, setIndex)}
-                      className="p-2 text-slate-400 hover:text-red-500"
-                    >
-                      <X size={16} />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             <button

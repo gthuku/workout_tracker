@@ -2,7 +2,10 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// Handle both ESM and CommonJS module contexts
+const __dirname = typeof import.meta?.url === 'string'
+  ? path.dirname(fileURLToPath(import.meta.url))
+  : process.cwd();
 
 // Use SQLite for simple local development
 const dbPath = process.env.DATABASE_PATH || path.join(__dirname, '..', 'workout.db');
@@ -36,7 +39,8 @@ export function initializeDatabase(): void {
       fitness_goal TEXT,
       experience_level TEXT CHECK (experience_level IS NULL OR experience_level IN ('beginner', 'intermediate', 'advanced')),
       gender TEXT,
-      bio TEXT
+      bio TEXT,
+      avatar TEXT
     );
 
     -- Exercises table (pre-populated + custom)
@@ -104,6 +108,52 @@ export function initializeDatabase(): void {
     sqlite.exec(`ALTER TABLE users ADD COLUMN password_hash TEXT`);
   } catch {
     // Column already exists
+  }
+  try {
+    sqlite.exec(`ALTER TABLE users ADD COLUMN avatar TEXT`);
+  } catch {
+    // Column already exists
+  }
+
+  // Migrate workout_sets table to add duration column and constraints
+  try {
+    // Check if duration column exists
+    const tableInfo = sqlite.prepare('PRAGMA table_info(workout_sets)').all();
+    const hasDuration = tableInfo.some((col: any) => col.name === 'duration');
+
+    if (!hasDuration) {
+      console.log('Migrating workout_sets table to add duration column...');
+
+      // SQLite doesn't support adding constraints to existing tables easily
+      // We'll recreate the table with the new schema
+      sqlite.exec(`
+        ALTER TABLE workout_sets RENAME TO workout_sets_old;
+
+        CREATE TABLE workout_sets (
+          id TEXT PRIMARY KEY,
+          workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+          exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
+          set_number INTEGER NOT NULL,
+          reps INTEGER CHECK (reps > 0),
+          weight REAL CHECK (weight >= 0),
+          duration INTEGER CHECK (duration > 0),
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(workout_id, exercise_id, set_number)
+        );
+
+        INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight, created_at)
+        SELECT id, workout_id, exercise_id, set_number, reps, weight, created_at
+        FROM workout_sets_old;
+
+        DROP TABLE workout_sets_old;
+
+        CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_exercise ON workout_sets(workout_id, exercise_id);
+      `);
+
+      console.log('workout_sets table migration completed');
+    }
+  } catch (error) {
+    console.error('Error migrating workout_sets table:', error);
   }
 
   console.log('Database schema initialized');

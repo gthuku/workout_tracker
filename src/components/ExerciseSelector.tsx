@@ -9,6 +9,14 @@ const MUSCLE_GROUPS: MuscleGroup[] = [
   'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core', 'Cardio',
 ];
 
+const BODY_PARTS = [
+  { value: '', label: 'All Body Parts' },
+  { value: 'upper', label: 'Upper Body', muscles: ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps'] },
+  { value: 'lower', label: 'Lower Body', muscles: ['Quads', 'Hamstrings', 'Glutes', 'Calves'] },
+  { value: 'core', label: 'Core', muscles: ['Core'] },
+  { value: 'cardio', label: 'Cardio', muscles: ['Cardio'] },
+];
+
 const EQUIPMENT_TYPES: Equipment[] = [
   'Barbell', 'Dumbbell', 'Machine', 'Bodyweight', 'Cable', 'Cardio',
 ];
@@ -21,6 +29,7 @@ export function ExerciseSelector({ onClose }: ExerciseSelectorProps) {
   const { addExercise, workoutExercises } = useWorkoutStore();
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [search, setSearch] = useState('');
+  const [bodyPartFilter, setBodyPartFilter] = useState('');
   const [muscleFilter, setMuscleFilter] = useState<MuscleGroup | ''>('');
   const [equipmentFilter, setEquipmentFilter] = useState<Equipment | ''>('');
   const [loading, setLoading] = useState(true);
@@ -28,18 +37,33 @@ export function ExerciseSelector({ onClose }: ExerciseSelectorProps) {
 
   const loadExercises = useCallback(async () => {
     try {
+      // Use muscle filter if specified, otherwise don't filter by muscle
+      const muscleGroupParam = muscleFilter || undefined;
+
       const data = await exerciseApi.list({
         search: search || undefined,
-        muscleGroup: muscleFilter || undefined,
+        muscleGroup: muscleGroupParam,
         equipment: equipmentFilter || undefined,
       });
-      setExercises(data);
+
+      // Client-side filtering for body parts when no specific muscle is selected
+      let filteredData = data;
+      if (bodyPartFilter && !muscleFilter) {
+        const bodyPart = BODY_PARTS.find(bp => bp.value === bodyPartFilter);
+        if (bodyPart && bodyPart.muscles) {
+          filteredData = data.filter(exercise =>
+            exercise.primaryMuscles.some(muscle => bodyPart.muscles!.includes(muscle))
+          );
+        }
+      }
+
+      setExercises(filteredData);
     } catch (error) {
       console.error('Failed to load exercises:', error);
     } finally {
       setLoading(false);
     }
-  }, [search, muscleFilter, equipmentFilter]);
+  }, [search, bodyPartFilter, muscleFilter, equipmentFilter]);
 
   useEffect(() => {
     loadExercises();
@@ -81,12 +105,34 @@ export function ExerciseSelector({ onClose }: ExerciseSelectorProps) {
           {/* Filters */}
           <div className="flex gap-2 overflow-x-auto pb-2">
             <select
+              value={bodyPartFilter}
+              onChange={(e) => {
+                setBodyPartFilter(e.target.value);
+                // Reset muscle filter when body part changes
+                if (e.target.value) setMuscleFilter('');
+              }}
+              className="input py-2 px-3 min-w-fit"
+            >
+              {BODY_PARTS.map((bp) => (
+                <option key={bp.value} value={bp.value}>{bp.label}</option>
+              ))}
+            </select>
+
+            <select
               value={muscleFilter}
-              onChange={(e) => setMuscleFilter(e.target.value as MuscleGroup | '')}
+              onChange={(e) => {
+                setMuscleFilter(e.target.value as MuscleGroup | '');
+                // Reset body part filter when specific muscle is selected
+                if (e.target.value) setBodyPartFilter('');
+              }}
               className="input py-2 px-3 min-w-fit"
             >
               <option value="">All Muscles</option>
-              {MUSCLE_GROUPS.map((mg) => (
+              {MUSCLE_GROUPS.filter(mg => {
+                if (!bodyPartFilter) return true;
+                const bodyPart = BODY_PARTS.find(bp => bp.value === bodyPartFilter);
+                return bodyPart && bodyPart.muscles && bodyPart.muscles.includes(mg);
+              }).map((mg) => (
                 <option key={mg} value={mg}>{mg}</option>
               ))}
             </select>

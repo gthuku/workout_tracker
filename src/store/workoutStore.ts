@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Exercise, Workout, WorkoutSet, MuscleGroup } from '../types';
+import type { Exercise, Workout, WorkoutSet, MuscleGroup, Equipment } from '../types';
 import { workoutApi, setApi, exerciseApi } from '../api/client';
 
 interface WorkoutExercise {
@@ -13,6 +13,7 @@ interface WorkoutStore {
   activeWorkout: Workout | null;
   workoutExercises: WorkoutExercise[];
   workoutStartTime: Date | null;
+  workoutElapsedSeconds: number;
   isLoading: boolean;
   error: string | null;
 
@@ -27,6 +28,7 @@ interface WorkoutStore {
   updateWorkoutName: (name: string) => Promise<void>;
   completeWorkout: (notes?: string, name?: string, duration?: number) => Promise<void>;
   discardWorkout: () => Promise<void>;
+  updateWorkoutTimer: (elapsedSeconds: number) => void;
   clearError: () => void;
 }
 
@@ -34,17 +36,25 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   activeWorkout: null,
   workoutExercises: [],
   workoutStartTime: null,
+  workoutElapsedSeconds: 0,
   isLoading: false,
   error: null,
 
   startWorkout: async (options?: { name?: string; date?: string; duration?: number; isComplete?: boolean }) => {
+    const { activeWorkout } = get();
+    if (activeWorkout) {
+      throw new Error('A workout is already active');
+    }
+
     set({ isLoading: true, error: null });
     try {
       const workout = await workoutApi.create(options);
+      const startTime = new Date();
       set({
         activeWorkout: workout,
         workoutExercises: [],
-        workoutStartTime: new Date(),
+        workoutStartTime: startTime,
+        workoutElapsedSeconds: 0,
         isLoading: false,
       });
     } catch (error) {
@@ -59,7 +69,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       if (workout) {
         // Group sets by exercise
         const exerciseMap = new Map<string, WorkoutSet[]>();
-        const exerciseInfo = new Map<string, { name: string; primaryMuscles: MuscleGroup[] }>();
+        const exerciseInfo = new Map<string, { name: string; primaryMuscles: MuscleGroup[]; equipment: Equipment }>();
 
         for (const setData of workout.sets) {
           const exerciseId = setData.exercise_id;
@@ -74,10 +84,11 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
             createdAt: setData.created_at,
           });
           exerciseMap.set(exerciseId, existing);
-          exerciseInfo.set(exerciseId, {
-            name: setData.exercise_name || '',
-            primaryMuscles: setData.primaryMuscles || [],
-          });
+           exerciseInfo.set(exerciseId, {
+             name: setData.exercise_name || '',
+             primaryMuscles: setData.primaryMuscles || [],
+             equipment: setData.equipment || 'Barbell',
+           });
         }
 
         // Build workout exercises array
@@ -90,7 +101,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
               id: exerciseId,
               name: info.name,
               primaryMuscles: info.primaryMuscles,
-              equipment: 'Barbell', // Default, we don't have this in the join
+              equipment: info.equipment,
               isCustom: false,
             },
             sets,
@@ -101,16 +112,16 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         set({
           activeWorkout: {
             id: workout.id,
-            userId: workout.user_id,
+            userId: workout.userId || workout.user_id,
             date: workout.date,
             name: workout.name,
             duration: workout.duration,
             notes: workout.notes,
             isComplete: workout.isComplete || Boolean(workout.is_complete),
-            createdAt: workout.created_at,
+            createdAt: workout.createdAt || workout.created_at,
           },
           workoutExercises,
-          workoutStartTime: new Date(workout.created_at),
+          workoutStartTime: new Date(workout.createdAt || workout.created_at),
           isLoading: false,
         });
       } else {
@@ -228,36 +239,56 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
   updateSet: async (setId: string, reps: number, weight: number) => {
     const { workoutExercises } = get();
 
+    // Store previous state for rollback
+    const previousWorkoutExercises = workoutExercises.map((we) => ({
+      ...we,
+      sets: [...we.sets],
+    }));
+
+    // Optimistic update
+    const updatedExercises = workoutExercises.map((we) => ({
+      ...we,
+      sets: we.sets.map((s) =>
+        s.id === setId ? { ...s, reps, weight } : s
+      ),
+    }));
+    set({ workoutExercises: updatedExercises });
+
     try {
       await setApi.update(setId, { reps, weight });
-
-      const updatedExercises = workoutExercises.map((we) => ({
-        ...we,
-        sets: we.sets.map((s) =>
-          s.id === setId ? { ...s, reps, weight } : s
-        ),
-      }));
-
-      set({ workoutExercises: updatedExercises });
     } catch (error) {
-      set({ error: (error as Error).message });
+      // Rollback on error
+      set({
+        workoutExercises: previousWorkoutExercises,
+        error: (error as Error).message
+      });
     }
   },
 
   deleteSet: async (setId: string) => {
     const { workoutExercises } = get();
 
+    // Store previous state for rollback
+    const previousWorkoutExercises = workoutExercises.map((we) => ({
+      ...we,
+      sets: [...we.sets],
+    }));
+
+    // Optimistic update
+    const updatedExercises = workoutExercises.map((we) => ({
+      ...we,
+      sets: we.sets.filter((s) => s.id !== setId),
+    }));
+    set({ workoutExercises: updatedExercises });
+
     try {
       await setApi.delete(setId);
-
-      const updatedExercises = workoutExercises.map((we) => ({
-        ...we,
-        sets: we.sets.filter((s) => s.id !== setId),
-      }));
-
-      set({ workoutExercises: updatedExercises });
     } catch (error) {
-      set({ error: (error as Error).message });
+      // Rollback on error
+      set({
+        workoutExercises: previousWorkoutExercises,
+        error: (error as Error).message
+      });
     }
   },
 
@@ -265,13 +296,20 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     const { activeWorkout } = get();
     if (!activeWorkout) return;
 
+    // Store previous state for rollback
+    const previousName = activeWorkout.name;
+
+    // Optimistic update
+    set({ activeWorkout: { ...activeWorkout, name } });
+
     try {
       await workoutApi.update(activeWorkout.id, { name });
-      set({
-        activeWorkout: { ...activeWorkout, name },
-      });
     } catch (error) {
-      set({ error: (error as Error).message });
+      // Rollback on error
+      set({
+        activeWorkout: { ...activeWorkout, name: previousName },
+        error: (error as Error).message
+      });
     }
   },
 
@@ -291,6 +329,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         activeWorkout: null,
         workoutExercises: [],
         workoutStartTime: null,
+        workoutElapsedSeconds: 0,
       });
     } catch (error) {
       set({ error: (error as Error).message });
@@ -307,10 +346,15 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         activeWorkout: null,
         workoutExercises: [],
         workoutStartTime: null,
+        workoutElapsedSeconds: 0,
       });
     } catch (error) {
       set({ error: (error as Error).message });
     }
+  },
+
+  updateWorkoutTimer: (elapsedSeconds: number) => {
+    set({ workoutElapsedSeconds: elapsedSeconds });
   },
 
   clearError: () => set({ error: null }),

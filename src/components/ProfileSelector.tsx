@@ -7,7 +7,7 @@ interface ProfileSelectorProps {
   onProfileSelected: (profileId: string) => void;
 }
 
-type AuthMode = 'login' | 'register' | 'set-password';
+type AuthMode = 'login' | 'register' | 'set-password' | 'reset-password';
 
 export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
   const [mode, setMode] = useState<AuthMode>('login');
@@ -25,6 +25,9 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
 
   // For set-password mode (legacy users)
   const [pendingUser, setPendingUser] = useState<(UserType & { needsPassword?: boolean }) | null>(null);
+
+  // For reset-password success
+  const [resetSuccess, setResetSuccess] = useState('');
 
   // Check if there are any users on initial load
   useEffect(() => {
@@ -144,6 +147,47 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!username.trim()) {
+      setError('Please enter your username');
+      return;
+    }
+
+    if (!password) {
+      setError('Please enter a new password');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setSubmitting(true);
+    setError('');
+    try {
+      const result = await authApi.resetPassword(username.trim(), password);
+      setResetSuccess(`Password reset successfully for ${result.displayName}!`);
+      setPassword('');
+      setConfirmPassword('');
+      // After 2 seconds, go back to login
+      setTimeout(() => {
+        setResetSuccess('');
+        setMode('login');
+      }, 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to reset password');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const resetForm = () => {
     setUsername('');
     setEmail('');
@@ -152,6 +196,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
     setDisplayName('');
     setError('');
     setPendingUser(null);
+    setResetSuccess('');
   };
 
   if (loading) {
@@ -174,6 +219,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
             {mode === 'login' && 'Sign in to your account'}
             {mode === 'register' && 'Create your account'}
             {mode === 'set-password' && 'Set your password'}
+            {mode === 'reset-password' && 'Reset your password'}
           </p>
         </div>
 
@@ -242,7 +288,17 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
               )}
             </button>
 
-            <div className="text-center pt-2">
+            <div className="text-center pt-2 space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  setMode('reset-password');
+                }}
+                className="text-slate-400 text-sm hover:text-slate-300"
+              >
+                Forgot Password?
+              </button>
               <p className="text-slate-400 text-sm">
                 Don't have an account?{' '}
                 <button
@@ -256,6 +312,110 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
                   Create one
                 </button>
               </p>
+            </div>
+          </form>
+        )}
+
+        {/* Reset Password Form */}
+        {mode === 'reset-password' && (
+          <form onSubmit={handleResetPassword} className="card space-y-4">
+            {resetSuccess ? (
+              <div className="bg-green-500/10 border border-green-500/30 text-green-400 px-4 py-3 rounded-lg text-sm text-center">
+                {resetSuccess}
+              </div>
+            ) : (
+              <>
+                <div className="text-center mb-4">
+                  <p className="text-slate-400 text-sm">
+                    Enter your username and a new password to reset your account.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Username</label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      placeholder="Enter your username"
+                      className="input w-full !pl-10"
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">New Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter new password (min 6 characters)"
+                      className="input w-full !pl-10 !pr-10"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                    >
+                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-slate-400 mb-1">Confirm New Password</label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Confirm new password"
+                      className="input w-full !pl-10"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="btn btn-primary w-full py-3"
+                >
+                  {submitting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Resetting password...
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Lock size={18} />
+                      Reset Password
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
+
+            <div className="text-center pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  resetForm();
+                  setMode('login');
+                }}
+                className="text-slate-400 text-sm hover:text-slate-300"
+              >
+                Back to Sign In
+              </button>
             </div>
           </form>
         )}

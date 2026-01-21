@@ -40,6 +40,7 @@ export interface User {
   experienceLevel?: ExperienceLevel;
   gender?: Gender;
   bio?: string;
+  avatar?: string;
 }
 
 export interface UserProfile {
@@ -52,6 +53,7 @@ export interface UserProfile {
   experienceLevel?: ExperienceLevel;
   gender?: Gender;
   bio?: string;
+  avatar?: string;
   preferredUnit: WeightUnit;
 }
 

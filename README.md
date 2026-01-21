@@ -26,6 +26,7 @@ A comprehensive full-stack workout tracking application built with modern web te
 
 ### **👥 User Management**
 - **Multiple User Profiles** - Create and switch between different user accounts
+- **Profile Pictures** - Upload and display custom avatar images
 - **Authentication System** - Secure login with password hashing
 - **Flexible Fitness Goals** - Select multiple fitness objectives
 - **User Preferences** - Customizable units, experience levels, and personal details
@@ -70,7 +71,7 @@ A comprehensive full-stack workout tracking application built with modern web te
 | **Vite Preview** | Production build preview |
 
 ### **Database Architecture**
-- **SQLite** with WAL mode for concurrent access
+- **SQLite** with WAL mode for concurrent read/write operations
 - **Transaction-based operations** for data integrity
 - **Foreign key constraints** with CASCADE deletes
 - **Indexed queries** for optimal performance
@@ -82,9 +83,6 @@ A comprehensive full-stack workout tracking application built with modern web te
 - **Node.js 18+** - JavaScript runtime environment
 - **SQLite** - Included automatically (no separate installation needed)
 
-### **Optional**
-- **PostgreSQL 14+** - For production deployment (can be configured via environment variables)
-
 ## Getting Started
 
 ### 1. Install dependencies
@@ -95,38 +93,23 @@ npm install
 
 ### 2. Database Setup
 
-**SQLite (Default - Recommended for Development)**
+**SQLite (Default and Only Supported Database)**
 - No setup required! SQLite database is created automatically
 - Database file: `workout.db` (created in project root)
 - Schema and seed data initialize automatically on first server start
-
-**PostgreSQL (Optional - For Production)**
-If you prefer PostgreSQL for development:
-
-```bash
-createdb workout_db
-```
-
-Then configure with environment variables:
-
-```bash
-export DATABASE_URL=postgresql://username:password@localhost:5432/workout_db
-```
+- Includes WAL mode for concurrent access and performance optimizations
 
 ### 3. Environment Configuration (Optional)
 
 Override default settings with environment variables:
 
 ```bash
-# Database
-export DATABASE_PATH=/path/to/custom/workout.db  # SQLite only
+# Database (defaults to ./workout.db)
+export DATABASE_PATH=/path/to/custom/workout.db
 
 # Server
 export PORT=3001
 export NODE_ENV=development
-
-# Authentication (for production)
-export JWT_SECRET=your-secret-key
 ```
 
 ### 4. Start development servers
@@ -142,7 +125,7 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 ### **Development**
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start both frontend (port 5174) and backend (port 3001) concurrently |
+| `npm run dev` | Start both frontend (port 5173) and backend (port 3001) concurrently |
 | `npm run dev:client` | Start frontend only (Vite dev server) |
 | `npm run dev:server` | Start backend only (Express with tsx watch) |
 
@@ -159,8 +142,6 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 | Command | Description |
 |---------|-------------|
 | `npm run lint` | Run ESLint for code quality checks |
-| `npm run deploy:frontend` | Deploy frontend to S3/CloudFront |
-| `npm run deploy:backend` | Deploy backend to Elastic Beanstalk |
 
 ## 📁 Project Structure
 
@@ -172,9 +153,7 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   │   ├── ExerciseSelector.tsx     # Exercise selection with search/filter
 │   │   ├── ProfileSelector.tsx      # User profile switching
 │   │   ├── Layout.tsx               # Main app layout with navigation
-│   │   ├── NumberStepper.tsx        # Numeric input with +/- buttons
-│   │   ├── ProgressIndicator.tsx    # Loading and progress indicators
-│   │   └── Layout.tsx
+│   │   └── ProgressIndicator.tsx    # Loading and progress indicators
 │   ├── 📁 constants/
 │   │   └── workout.ts               # Application constants and limits
 │   ├── 📁 hooks/                    # Custom React hooks
@@ -185,8 +164,9 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   │   ├── ExerciseLibrary.tsx      # Browse and search exercises
 │   │   ├── ExerciseHistory.tsx      # Individual exercise progress
 │   │   ├── WorkoutHistory.tsx       # Workout session history
+│   │   ├── WorkoutDetail.tsx        # Detailed view of a single workout
 │   │   ├── Stats.tsx                # Detailed analytics and charts
-│   │   └── Profile.tsx              # User profile management
+│   │   └── Profile.tsx              # User profile management (with avatar)
 │   ├── 📁 store/
 │   │   └── workoutStore.ts          # Zustand state management
 │   ├── 📁 types/
@@ -199,9 +179,6 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── index.ts                     # Express server setup and API routes
 │   ├── database.ts                  # SQLite database configuration and helpers
 │   └── seed.ts                      # Database seeding with exercise data
-│
-├── 📁 infrastructure/               # AWS deployment configurations
-│   └── node_modules/                # Deployment dependencies
 │
 ├── 📄 package.json                  # Project dependencies and scripts
 ├── 📄 tsconfig.json                 # TypeScript configuration
@@ -231,8 +208,8 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 | `POST` | `/api/profiles` | Create new profile |
 | `DELETE` | `/api/profiles/:id` | Delete profile |
 | `GET` | `/api/user` | Get current user details |
-| `PATCH` | `/api/user` | Update user information |
-| `PATCH` | `/api/user/profile` | Update user profile settings |
+| `PATCH` | `/api/user` | Update user preferences |
+| `PUT` | `/api/user/profile` | Update full user profile (including avatar) |
 
 ### **Exercises**
 | Method | Endpoint | Description |
@@ -252,6 +229,7 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 | `PATCH` | `/api/workouts/:id` | Update workout (name, notes, completion) |
 | `DELETE` | `/api/workouts/:id` | Delete workout |
 | `DELETE` | `/api/workouts` | Clear all workouts (dangerous) |
+| `DELETE` | `/api/workouts/incomplete` | Clean up incomplete/abandoned workouts |
 
 ### **Workout Sets**
 | Method | Endpoint | Description |
@@ -278,11 +256,11 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 The application uses SQLite with the following key tables:
 
 ### **Core Tables**
-- **`users`** - User profiles with authentication and preferences
+- **`users`** - User profiles with authentication, preferences, and avatar
 - **`workouts`** - Workout sessions with metadata
 - **`workout_sets`** - Individual sets with reps, weight, and duration
 - **`exercises`** - Exercise library (pre-loaded + custom)
-- **`personal_records`** - Automatic PR tracking
+- **`personal_records`** - Automatic PR tracking (max weight, max volume)
 
 ### **Key Features**
 - **Foreign Key Constraints** with CASCADE deletes for data integrity
@@ -290,6 +268,7 @@ The application uses SQLite with the following key tables:
 - **CHECK Constraints** validate data ranges (positive weights/reps)
 - **Indexes** on frequently queried columns for performance
 - **WAL Mode** enabled for concurrent read/write operations
+- **Automatic Cleanup** removes incomplete workouts older than 24 hours
 
 ## 🚀 Deployment
 
@@ -304,30 +283,14 @@ npm run build    # Build both frontend and backend
 npm start        # Start production server
 ```
 
-### **AWS Deployment (Configured)**
-The application includes AWS deployment configurations:
-
-- **Frontend**: S3 + CloudFront for static hosting
-- **Backend**: Elastic Beanstalk for Express server
-- **Database**: SQLite (file-based) or PostgreSQL (configurable)
-
-```bash
-npm run deploy:frontend  # Deploy React app to S3/CloudFront
-npm run deploy:backend   # Deploy API to Elastic Beanstalk
-```
-
 ### **Environment Variables**
 ```bash
-# Database
-DATABASE_PATH=/path/to/workout.db
+# Database (optional - defaults to ./workout.db)
+DATABASE_PATH=/path/to/custom/workout.db
 
-# AWS (for deployment)
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-key
-AWS_SECRET_ACCESS_KEY=your-secret
-
-# Authentication
-JWT_SECRET=your-secret-key
+# Server
+PORT=3001
+NODE_ENV=production
 ```
 
 ## 🔒 Security Features
@@ -369,17 +332,21 @@ User Action → React Component → Zustand Store → API Client → Express Rou
 ## 📈 Recent Improvements
 
 ### **Critical Fixes (Latest)**
-- ✅ **Database Transactions** - All operations wrapped in transactions
-- ✅ **WAL Mode Enabled** - Concurrent database access
+- ✅ **Database Transactions** - All multi-step operations wrapped in atomic transactions
+- ✅ **WAL Mode Enabled** - Concurrent database access with Write-Ahead Logging
 - ✅ **Optimistic UI Updates** - State rollback on API failures
 - ✅ **Foreign Key Constraints** - Data integrity with CASCADE deletes
-- ✅ **Type Safety** - Comprehensive TypeScript coverage
+- ✅ **Request Validation** - Server-side validation for all inputs (reps, weight, exercises)
+- ✅ **Type Safety** - Comprehensive TypeScript coverage end-to-end
 
 ### **New Features**
-- ✅ **Cardio Exercise Support** - Duration-based tracking for cardio
+- ✅ **Profile Pictures** - Upload and display avatar images (base64 storage)
+- ✅ **Cardio Exercise Support** - Duration-based tracking for cardio exercises
 - ✅ **Multiple Fitness Goals** - Select multiple objectives per profile
 - ✅ **Enhanced Analytics** - Improved progress visualization
 - ✅ **Better Error Handling** - Comprehensive error boundaries
+- ✅ **Body Part Filtering** - Dropdown to filter exercises by major body parts
+- ✅ **Automatic Cleanup** - Server automatically removes old incomplete workouts
 
 ## 🤝 Contributing
 

@@ -12,12 +12,15 @@ export function ActiveWorkout() {
   const {
     activeWorkout,
     workoutExercises,
+    workoutStartTime,
+    workoutElapsedSeconds,
     addSet,
     updateSet,
     deleteSet,
     completeWorkout,
     discardWorkout,
     updateWorkoutName,
+    updateWorkoutTimer,
   } = useWorkoutStore();
 
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
@@ -25,8 +28,7 @@ export function ActiveWorkout() {
   const [notes, setNotes] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [startTime] = useState(() => Date.now());
+  // Timer state is now managed in the store for persistence across page navigation
 
   // Generate auto workout name based on day, time, and muscles
   const generateWorkoutName = useCallback(() => {
@@ -54,12 +56,15 @@ export function ActiveWorkout() {
 
   // Timer effect - starts at 0 and counts up
   useEffect(() => {
+    if (!workoutStartTime) return;
+
     const interval = setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startTime) / 1000));
+      const elapsed = Math.floor((Date.now() - workoutStartTime.getTime()) / 1000);
+      updateWorkoutTimer(elapsed);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [startTime]);
+  }, [workoutStartTime, updateWorkoutTimer]);
 
   // No longer auto-start - workout must be started from Dashboard
 
@@ -70,6 +75,9 @@ export function ActiveWorkout() {
     const seconds = totalSeconds % 60;
     return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
   };
+
+  // Use timer from store
+  const elapsedSeconds = workoutElapsedSeconds;
 
   const handleComplete = async () => {
     const finalName = activeWorkout?.name || generateWorkoutName();

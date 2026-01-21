@@ -24,6 +24,7 @@ export interface RawWorkoutSet {
   created_at: string;
   exercise_name?: string;
   primaryMuscles?: MuscleGroup[];
+  equipment?: Equipment;
   isPR?: boolean; // Server-calculated PR status
 }
 
@@ -37,10 +38,13 @@ export interface RawWorkout {
   is_complete: boolean;
   created_at: string;
   sets?: RawWorkoutSet[];
-  isComplete?: boolean; // Sometimes mapped
+  // Optional camelCase variants (for API response compatibility)
+  userId?: string;
+  isComplete?: boolean;
+  createdAt?: string;
 }
 
-const BASE_URL = '';
+const BASE_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
 
 // Get current user ID from localStorage
 function getCurrentUserId(): string | null {
@@ -104,6 +108,11 @@ export const authApi = {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  resetPassword: (username: string, newPassword: string) =>
+    fetchJson<{ success: boolean; message: string; displayName: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ username, newPassword }),
+    }),
 };
 
 // User API
@@ -116,7 +125,7 @@ export const userApi = {
     }),
   updateProfile: (data: Partial<UserProfile>) =>
     fetchJson<User>('/api/user/profile', {
-      method: 'PATCH',
+      method: 'PUT',
       body: JSON.stringify(data),
     }),
 };

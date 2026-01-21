@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { ChevronLeft, Save, User as UserIcon, Target, Ruler, Scale, Calendar, LogOut } from 'lucide-react';
+import { ChevronLeft, Save, User as UserIcon, Target, Ruler, Scale, Calendar, LogOut, Camera } from 'lucide-react';
 import { userApi } from '../api/client';
 import type { ExperienceLevel, WeightUnit, Gender } from '../types';
 
@@ -42,6 +42,8 @@ export function Profile() {
   const [gender, setGender] = useState<Gender | ''>('');
   const [bio, setBio] = useState('');
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('lbs');
+  const [avatar, setAvatar] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadUser();
@@ -60,6 +62,7 @@ export function Profile() {
       setGender(userData.gender || '');
       setBio(userData.bio || '');
       setPreferredUnit(userData.preferredUnit || 'lbs');
+      setAvatar(userData.avatar || null);
     } catch (error) {
       console.error('Failed to load user:', error);
     } finally {
@@ -81,6 +84,7 @@ export function Profile() {
         experienceLevel: experienceLevel || undefined,
         gender: gender || undefined,
         bio: bio || undefined,
+        avatar: avatar || undefined,
         preferredUnit,
       });
       setSaved(true);
@@ -90,6 +94,30 @@ export function Profile() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      alert('Please select an image file');
+      return;
+    }
+
+    // Validate file size (max 100KB for base64 storage)
+    if (file.size > 100 * 1024) {
+      alert('Image must be less than 100KB');
+      return;
+    }
+
+    // Convert to base64
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAvatar(reader.result as string);
+    };
+    reader.readAsDataURL(file);
   };
 
   if (loading) {
@@ -121,11 +149,31 @@ export function Profile() {
       </header>
 
       <div className="p-4 max-w-lg mx-auto space-y-6">
-        {/* Profile Picture Placeholder */}
+        {/* Profile Picture */}
         <div className="flex flex-col items-center">
-          <div className="w-24 h-24 bg-slate-700 rounded-full flex items-center justify-center mb-3">
-            <UserIcon size={48} className="text-slate-400" />
-          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleAvatarChange}
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="relative w-24 h-24 rounded-full overflow-hidden mb-3 group"
+          >
+            {avatar ? (
+              <img src={avatar} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full bg-slate-700 flex items-center justify-center">
+                <UserIcon size={48} className="text-slate-400" />
+              </div>
+            )}
+            <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <Camera size={24} className="text-white" />
+            </div>
+          </button>
+          <p className="text-xs text-slate-500 mb-2">Tap to change photo</p>
           <p className="text-lg font-semibold">{displayName || 'Your Name'}</p>
           {experienceLevel && (
             <span className="text-sm text-blue-400 capitalize">{experienceLevel} Lifter</span>

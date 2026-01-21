@@ -3,9 +3,83 @@ import cors from 'cors';
 import bcrypt from 'bcrypt';
 import db, { initializeDatabase, closeDatabase } from './database.js';
 import { seedExercises, createDefaultUser } from './seed.js';
+
+// Clean up incomplete workouts that are older than 24 hours
+function cleanupIncompleteWorkouts(): void {
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+
+  try {
+    const result = db.queryOne(
+      "SELECT COUNT(*) as count FROM workouts WHERE is_complete = 0 AND created_at < $1",
+      [oneDayAgo]
+    );
+
+    if (result && parseInt(result.count) > 0) {
+      db.execute(
+        "DELETE FROM workouts WHERE is_complete = 0 AND created_at < $1",
+        [oneDayAgo]
+      );
+      console.log(`Cleaned up ${result.count} old incomplete workouts`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up incomplete workouts:', error);
+  }
+}
 import { v4 as uuidv4 } from 'uuid';
 
 const SALT_ROUNDS = 10;
+
+// ============ VALIDATION HELPERS ============
+
+const VALID_EQUIPMENT = ['Barbell', 'Dumbbell', 'Machine', 'Bodyweight', 'Cable', 'Cardio'] as const;
+const VALID_MUSCLE_GROUPS = ['Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps', 'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core', 'Cardio'] as const;
+
+function validateNumber(val: unknown, min: number, max: number, fieldName: string): number {
+  if (val === undefined || val === null) {
+    throw new Error(`${fieldName} is required`);
+  }
+  const num = Number(val);
+  if (isNaN(num) || num < min || num > max) {
+    throw new Error(`${fieldName} must be between ${min} and ${max}`);
+  }
+  return num;
+}
+
+function validateOptionalNumber(val: unknown, min: number, max: number, fieldName: string): number | null {
+  if (val === undefined || val === null) return null;
+  const num = Number(val);
+  if (isNaN(num) || num < min || num > max) {
+    throw new Error(`${fieldName} must be between ${min} and ${max}`);
+  }
+  return num;
+}
+
+function validateString(val: unknown, minLength: number, maxLength: number, fieldName: string): string {
+  if (typeof val !== 'string') {
+    throw new Error(`${fieldName} must be a string`);
+  }
+  if (val.length < minLength || val.length > maxLength) {
+    throw new Error(`${fieldName} must be between ${minLength} and ${maxLength} characters`);
+  }
+  return val;
+}
+
+function validateEnum<T extends string>(val: unknown, allowed: readonly T[], fieldName: string): T {
+  if (!allowed.includes(val as T)) {
+    throw new Error(`${fieldName} must be one of: ${allowed.join(', ')}`);
+  }
+  return val as T;
+}
+
+function validateMuscleGroups(val: unknown): string[] {
+  if (!Array.isArray(val) || val.length === 0 || val.length > 3) {
+    throw new Error('primaryMuscles must be an array of 1-3 muscle groups');
+  }
+  for (const muscle of val) {
+    validateEnum(muscle, VALID_MUSCLE_GROUPS, 'muscle group');
+  }
+  return val as string[];
+}
 
 // Database result types (snake_case from SQLite)
 interface DbUser {
@@ -24,6 +98,7 @@ interface DbUser {
   experience_level?: string;
   gender?: string;
   bio?: string;
+  avatar?: string;
 }
 
 interface DbExercise {
@@ -97,7 +172,7 @@ app.get('/api/profiles', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
+      fitnessGoal: user.fitness_goal ? (user.fitness_goal.startsWith('[') ? JSON.parse(user.fitness_goal) : [user.fitness_goal]) : undefined,
       experienceLevel: user.experience_level,
       bio: user.bio,
       createdAt: user.created_at,
@@ -145,15 +220,17 @@ app.delete('/api/profiles/:id', async (req, res) => {
   const profileId = req.params.id;
 
   try {
-    // Delete all related data first
-    await db.execute('DELETE FROM personal_records WHERE user_id = $1', [profileId]);
-    await db.execute(
-      'DELETE FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = $1)',
-      [profileId]
-    );
-    await db.execute('DELETE FROM workouts WHERE user_id = $1', [profileId]);
-    await db.execute('DELETE FROM exercises WHERE user_id = $1', [profileId]);
-    await db.execute('DELETE FROM users WHERE id = $1', [profileId]);
+    // Use transaction to ensure atomic deletion of all related data
+    db.transaction(() => {
+      db.execute('DELETE FROM personal_records WHERE user_id = $1', [profileId]);
+      db.execute(
+        'DELETE FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = $1)',
+        [profileId]
+      );
+      db.execute('DELETE FROM workouts WHERE user_id = $1', [profileId]);
+      db.execute('DELETE FROM exercises WHERE user_id = $1', [profileId]);
+      db.execute('DELETE FROM users WHERE id = $1', [profileId]);
+    });
 
     res.json({ success: true });
   } catch (error) {
@@ -168,35 +245,45 @@ app.delete('/api/profiles/:id', async (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
   const { username, email, password, displayName } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
+  // Validate inputs
+  try {
+    validateString(username, 2, 50, 'username');
+    validateString(password, 6, 100, 'password');
+    if (email) validateString(email, 5, 100, 'email');
+    if (displayName) validateString(displayName, 1, 100, 'displayName');
+  } catch (error) {
+    return res.status(400).json({ error: (error as Error).message });
   }
 
   try {
-    // Check if username exists
-    const existingUser = await db.queryOne('SELECT id FROM users WHERE username = $1', [username]);
-    if (existingUser) {
-      return res.status(400).json({ error: 'Username already exists' });
-    }
-
-    // Check if email exists (if provided)
-    if (email) {
-      const existingEmail = await db.queryOne('SELECT id FROM users WHERE email = $1', [email]);
-      if (existingEmail) {
-        return res.status(400).json({ error: 'Email already registered' });
-      }
-    }
-
     const id = uuidv4();
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
-    await db.execute(
-      `INSERT INTO users (id, username, email, password_hash, preferred_unit, display_name)
-       VALUES ($1, $2, $3, $4, 'lbs', $5)`,
-      [id, username, email || null, passwordHash, displayName || username]
-    );
+    // Use transaction to prevent race conditions on duplicate check
+    const user = db.transaction(() => {
+      // Check if username exists
+      const existingUser = db.queryOne('SELECT id FROM users WHERE username = $1', [username]);
+      if (existingUser) {
+        throw new Error('Username already exists');
+      }
 
-    const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [id]);
+      // Check if email exists (if provided)
+      if (email) {
+        const existingEmail = db.queryOne('SELECT id FROM users WHERE email = $1', [email]);
+        if (existingEmail) {
+          throw new Error('Email already registered');
+        }
+      }
+
+      db.execute(
+        `INSERT INTO users (id, username, email, password_hash, preferred_unit, display_name)
+         VALUES ($1, $2, $3, $4, 'lbs', $5)`,
+        [id, username, email || null, passwordHash, displayName || username]
+      );
+
+      return db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [id]);
+    });
+
     if (!user) {
       return res.status(404).json({ error: 'User not found' });
     }
@@ -209,6 +296,10 @@ app.post('/api/auth/register', async (req, res) => {
       createdAt: user.created_at,
     });
   } catch (error) {
+    const message = (error as Error).message;
+    if (message === 'Username already exists' || message === 'Email already registered') {
+      return res.status(400).json({ error: message });
+    }
     console.error('Error registering user:', error);
     res.status(500).json({ error: 'Failed to register user' });
   }
@@ -288,6 +379,43 @@ app.post('/api/auth/set-password', async (req, res) => {
   }
 });
 
+// Reset password (forgot password flow)
+app.post('/api/auth/reset-password', async (req, res) => {
+  const { username, newPassword } = req.body;
+
+  if (!username || !newPassword) {
+    return res.status(400).json({ error: 'Username and new password are required' });
+  }
+
+  if (newPassword.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters' });
+  }
+
+  try {
+    // Find user by username or email
+    const user = await db.queryOne<DbUser>(
+      'SELECT * FROM users WHERE username = $1 OR email = $2',
+      [username, username]
+    );
+
+    if (!user) {
+      return res.status(404).json({ error: 'No account found with that username' });
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    await db.execute('UPDATE users SET password_hash = $1 WHERE id = $2', [passwordHash, user.id]);
+
+    res.json({
+      success: true,
+      message: 'Password has been reset successfully',
+      displayName: user.display_name || user.username
+    });
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    res.status(500).json({ error: 'Failed to reset password' });
+  }
+});
+
 // Update user email
 app.patch('/api/auth/email', async (req, res) => {
   const userId = await getUserId(req);
@@ -362,10 +490,11 @@ app.get('/api/user', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
+      fitnessGoal: user.fitness_goal ? (user.fitness_goal.startsWith('[') ? JSON.parse(user.fitness_goal) : [user.fitness_goal]) : undefined,
       experienceLevel: user.experience_level,
       gender: user.gender,
       bio: user.bio,
+      avatar: user.avatar,
       createdAt: user.created_at,
     });
   } catch (error) {
@@ -381,9 +510,14 @@ app.patch('/api/user', async (req, res) => {
     await db.execute('UPDATE users SET preferred_unit = $1 WHERE id = $2', [preferredUnit, userId]);
     const user = await db.queryOne('SELECT * FROM users WHERE id = $1', [userId]);
     res.json(user);
-  } catch (error) {
+    } catch (error) {
     console.error('Error updating user:', error);
-    res.status(500).json({ error: 'Failed to update user' });
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ 
+      error: 'Failed to update user',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -401,6 +535,7 @@ app.put('/api/user/profile', async (req, res) => {
       gender,
       bio,
       preferredUnit,
+      avatar,
     } = req.body;
 
     await db.execute(
@@ -414,8 +549,9 @@ app.put('/api/user/profile', async (req, res) => {
         experience_level = $7,
         gender = $8,
         bio = $9,
-        preferred_unit = $10
-      WHERE id = $11`,
+        preferred_unit = $10,
+        avatar = $11
+      WHERE id = $12`,
       [
         displayName || null,
         age || null,
@@ -427,6 +563,7 @@ app.put('/api/user/profile', async (req, res) => {
         gender || null,
         bio || null,
         preferredUnit || 'lbs',
+        avatar || null,
         userId,
       ]
     );
@@ -441,10 +578,11 @@ app.put('/api/user/profile', async (req, res) => {
       heightFeet: user.height_feet,
       heightInches: user.height_inches,
       bodyWeight: user.body_weight,
-      fitnessGoal: user.fitness_goal ? JSON.parse(user.fitness_goal) : undefined,
+      fitnessGoal: user.fitness_goal ? (user.fitness_goal.startsWith('[') ? JSON.parse(user.fitness_goal) : [user.fitness_goal]) : undefined,
       experienceLevel: user.experience_level,
       gender: user.gender,
       bio: user.bio,
+      avatar: user.avatar,
       createdAt: user.created_at,
     });
   } catch (error) {
@@ -500,6 +638,16 @@ app.post('/api/exercises', async (req, res) => {
   try {
     const userId = await getUserId(req);
     const { name, primaryMuscles, equipment } = req.body;
+
+    // Validate inputs
+    try {
+      validateString(name, 2, 100, 'name');
+      validateMuscleGroups(primaryMuscles);
+      validateEnum(equipment, VALID_EQUIPMENT, 'equipment');
+    } catch (error) {
+      return res.status(400).json({ error: (error as Error).message });
+    }
+
     const id = uuidv4();
 
     await db.execute(
@@ -528,7 +676,7 @@ app.get('/api/workouts', async (req, res) => {
     const { limit = 10, includeIncomplete } = req.query;
 
     let query = 'SELECT * FROM workouts WHERE user_id = $1';
-    if (!includeIncomplete) {
+    if (includeIncomplete !== 'true') {
       query += ' AND is_complete = 1';
     }
     query += ' ORDER BY date DESC LIMIT $2';
@@ -599,8 +747,9 @@ app.get('/api/workouts/active', async (req, res) => {
 });
 
 app.post('/api/workouts', async (req, res) => {
+  let userId: string;
   try {
-    const userId = await getUserId(req);
+    userId = await getUserId(req);
     const { name, date: customDate, duration, isComplete } = req.body;
     const id = uuidv4();
     const date = customDate || new Date().toISOString().split('T')[0];
@@ -608,14 +757,21 @@ app.post('/api/workouts', async (req, res) => {
     await db.execute(
       `INSERT INTO workouts (id, user_id, name, date, duration, is_complete)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, userId, name || null, date, duration || null, isComplete || false]
+      [id, userId, name || null, date, duration || null, isComplete ? 1 : 0]
     );
 
     const workout = await db.queryOne('SELECT * FROM workouts WHERE id = $1', [id]);
     res.json({ ...workout, isComplete: workout.is_complete, sets: [] });
   } catch (error) {
     console.error('Error creating workout:', error);
-    res.status(500).json({ error: 'Failed to create workout' });
+    console.error('Stack trace:', error.stack);
+    console.error('Request body:', req.body);
+    console.error('User ID:', userId);
+    res.status(500).json({
+      error: 'Failed to create workout',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -696,7 +852,7 @@ app.patch('/api/workouts/:id', async (req, res) => {
     }
     if (isComplete !== undefined) {
       updates.push(`is_complete = $${paramIndex}`);
-      params.push(isComplete);
+      params.push(isComplete ? 1 : 0);
       paramIndex++;
     }
     if (duration !== undefined) {
@@ -717,7 +873,14 @@ app.patch('/api/workouts/:id', async (req, res) => {
     res.json({ ...updated, isComplete: updated.is_complete });
   } catch (error) {
     console.error('Error updating workout:', error);
-    res.status(500).json({ error: 'Failed to update workout' });
+    console.error('Stack trace:', error.stack);
+    console.error('Request body:', req.body);
+    console.error('Workout ID:', req.params.id);
+    res.status(500).json({
+      error: 'Failed to update workout',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -725,14 +888,6 @@ app.patch('/api/workouts/:id', async (req, res) => {
 app.delete('/api/workouts', async (req, res) => {
   try {
     const userId = await getUserId(req);
-    // Delete all personal records for this user
-    await db.execute('DELETE FROM personal_records WHERE user_id = $1', [userId]);
-    // Delete all sets from user's workouts
-    await db.execute(
-      'DELETE FROM workout_sets WHERE workout_id IN (SELECT id FROM workouts WHERE user_id = $1)',
-      [userId]
-    );
-    // Delete all workouts
     await db.execute('DELETE FROM workouts WHERE user_id = $1', [userId]);
     res.json({ success: true });
   } catch (error) {
@@ -741,12 +896,35 @@ app.delete('/api/workouts', async (req, res) => {
   }
 });
 
+app.delete('/api/workouts/incomplete', async (req, res) => {
+  try {
+    const userId = await getUserId(req);
+    const result = db.queryOne(
+      'SELECT COUNT(*) as count FROM workouts WHERE user_id = $1 AND is_complete = 0',
+      [userId]
+    );
+
+    await db.execute('DELETE FROM workouts WHERE user_id = $1 AND is_complete = 0', [userId]);
+
+    const deletedCount = parseInt(result?.count || '0');
+    res.json({
+      success: true,
+      deletedCount,
+      message: `Deleted ${deletedCount} incomplete workouts`
+    });
+  } catch (error) {
+    console.error('Error cleaning up incomplete workouts:', error);
+    res.status(500).json({ error: 'Failed to clean up incomplete workouts' });
+  }
+});
+
 app.delete('/api/workouts/:id', async (req, res) => {
   try {
-    // First delete all sets associated with the workout
-    await db.execute('DELETE FROM workout_sets WHERE workout_id = $1', [req.params.id]);
-    // Then delete the workout
-    await db.execute('DELETE FROM workouts WHERE id = $1', [req.params.id]);
+    // Use transaction to ensure atomic deletion
+    db.transaction(() => {
+      db.execute('DELETE FROM workout_sets WHERE workout_id = $1', [req.params.id]);
+      db.execute('DELETE FROM workouts WHERE id = $1', [req.params.id]);
+    });
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting workout:', error);
@@ -757,21 +935,36 @@ app.delete('/api/workouts/:id', async (req, res) => {
 // ============ WORKOUT SET ROUTES ============
 
 app.post('/api/workouts/:workoutId/sets', async (req, res) => {
+  let userId: string;
   try {
-    const userId = await getUserId(req);
-    const { exerciseId, setNumber, reps, weight, duration } = req.body;
+    userId = await getUserId(req);
+    const { exerciseId, setNumber } = req.body;
+
+    // Validate inputs
+    try {
+      validateString(exerciseId, 1, 100, 'exerciseId');
+      validateNumber(setNumber, 1, 100, 'setNumber');
+    } catch (error) {
+      return res.status(400).json({ error: (error as Error).message });
+    }
+
+    // Validate optional numeric fields
+    const validatedReps = validateOptionalNumber(req.body.reps, 1, 999, 'reps');
+    const validatedWeight = validateOptionalNumber(req.body.weight, 0, 9999, 'weight');
+    const validatedDuration = validateOptionalNumber(req.body.duration, 1, 999, 'duration');
+
     const id = uuidv4();
 
     await db.withTransaction(async () => {
       await db.execute(
         `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight, duration)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, req.params.workoutId, exerciseId, setNumber, reps || null, weight || null, duration || null]
+        [id, req.params.workoutId, exerciseId, setNumber, validatedReps, validatedWeight, validatedDuration]
       );
 
       // Check for PRs (only for strength exercises)
-      if (reps && weight) {
-        await checkAndUpdatePRs(userId, exerciseId, req.params.workoutId, weight, reps);
+      if (validatedReps && validatedWeight) {
+        await checkAndUpdatePRs(userId, exerciseId, req.params.workoutId, validatedWeight, validatedReps);
       }
     });
 
@@ -779,7 +972,15 @@ app.post('/api/workouts/:workoutId/sets', async (req, res) => {
     res.json(set);
   } catch (error) {
     console.error('Error creating set:', error);
-    res.status(500).json({ error: 'Failed to create set' });
+    console.error('Stack trace:', error.stack);
+    console.error('Request body:', req.body);
+    console.error('Workout ID:', req.params.workoutId);
+    console.error('User ID:', userId);
+    res.status(500).json({
+      error: 'Failed to create set',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
@@ -1204,6 +1405,7 @@ function startServer() {
     initializeDatabase();
     seedExercises();
     createDefaultUser();
+    cleanupIncompleteWorkouts();
 
     // Graceful shutdown
     process.on('SIGINT', () => {
