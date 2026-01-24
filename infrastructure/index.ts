@@ -11,8 +11,6 @@ const instanceType = config.get("instanceType") || "t3.micro";
 // Resource naming helper
 const resourceName = (name: string) => `${appName}-${environment}-${name}`;
 
-// Get current AWS region
-const currentRegion = aws.getRegion();
 
 // Get latest Amazon Linux 2023 AMI
 const ami = aws.ec2.getAmi({
@@ -144,7 +142,7 @@ new aws.iam.RolePolicyAttachment(resourceName("ec2-s3-policy"), {
 });
 
 // CloudWatch Logs policy
-const cloudwatchPolicy = new aws.iam.RolePolicy(resourceName("ec2-cloudwatch-policy"), {
+new aws.iam.RolePolicy(resourceName("ec2-cloudwatch-policy"), {
   role: ec2Role.id,
   policy: JSON.stringify({
     Version: "2012-10-17",
@@ -360,7 +358,7 @@ const frontendBucket = new aws.s3.Bucket(resourceName("frontend"), {
 });
 
 // Block all public access (CloudFront will serve content)
-const frontendBucketPublicAccessBlock = new aws.s3.BucketPublicAccessBlock(
+new aws.s3.BucketPublicAccessBlock(
   resourceName("frontend-public-access-block"),
   {
     bucket: frontendBucket.id,
@@ -501,7 +499,7 @@ const distribution = new aws.cloudfront.Distribution(resourceName("cdn"), {
 });
 
 // S3 bucket policy to allow CloudFront access
-const frontendBucketPolicy = new aws.s3.BucketPolicy(resourceName("frontend-policy"), {
+new aws.s3.BucketPolicy(resourceName("frontend-policy"), {
   bucket: frontendBucket.id,
   policy: pulumi.all([frontendBucket.arn, distribution.arn]).apply(([bucketArn, distArn]) =>
     JSON.stringify({

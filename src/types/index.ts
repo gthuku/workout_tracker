@@ -147,3 +147,18 @@ export interface DashboardData {
   recentPRs: (PersonalRecord & { exerciseName: string })[];
   weeklyMuscleGroups: MuscleGroupVolume[];
 }
+
+export type PRTrendType = 'max_weight' | 'max_volume' | 'max_reps';
+
+export interface PRTrendPoint {
+  date: string;
+  value: number;
+  isNewPR: boolean;
+}
+
+export interface PRTrends {
+  exerciseId: string;
+  type: PRTrendType;
+  currentPR: number;
+  trends: PRTrendPoint[];
+}

@@ -10,6 +10,8 @@ import type {
   Equipment,
   User,
   UserProfile,
+  PRTrends,
+  PRTrendType,
 } from '../types';
 
 // Raw API response types (snake_case from server)
@@ -44,26 +46,92 @@ export interface RawWorkout {
   createdAt?: string;
 }
 
-const BASE_URL = import.meta.env.DEV ? 'http://localhost:3001' : '';
+// Use empty BASE_URL in dev to leverage Vite's proxy (avoids CORS issues)
+const BASE_URL = '';
 
-// Get current user ID from localStorage
+// Token storage keys
+const TOKEN_KEY = 'authToken';
+const USER_ID_KEY = 'selectedProfileId';
+
+// Get JWT token from localStorage
+function getAuthToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+// Set JWT token in localStorage
+export function setAuthToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+// Clear JWT token from localStorage
+export function clearAuthToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+// Get current user ID from localStorage (backward compatibility)
 function getCurrentUserId(): string | null {
-  return localStorage.getItem('selectedProfileId');
+  return localStorage.getItem(USER_ID_KEY);
+}
+
+// Set current user ID (backward compatibility)
+export function setCurrentUserId(userId: string): void {
+  localStorage.setItem(USER_ID_KEY, userId);
+}
+
+// Clear current user ID
+export function clearCurrentUserId(): void {
+  localStorage.removeItem(USER_ID_KEY);
+}
+
+// Clear all auth data (for logout)
+export function clearAuth(): void {
+  clearAuthToken();
+  clearCurrentUserId();
+}
+
+// Check if user is authenticated
+export function isAuthenticated(): boolean {
+  return !!getAuthToken() || !!getCurrentUserId();
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
+  const token = getAuthToken();
   const userId = getCurrentUserId();
+
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options?.headers,
+  };
+
+  // Prefer JWT token if available, fall back to X-User-Id for backward compatibility
+  if (token) {
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+  } else if (userId) {
+    (headers as Record<string, string>)['X-User-Id'] = userId;
+  }
+
   const response = await fetch(`${BASE_URL}${url}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(userId ? { 'X-User-Id': userId } : {}),
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!response.ok) {
-    throw new Error(`API Error: ${response.statusText}`);
+    // Try to get error message from response
+    let errorMessage = response.statusText;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorMessage;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Handle 401 Unauthorized - clear auth and redirect could be handled here
+    if (response.status === 401) {
+      // Optionally clear auth on 401
+      // clearAuth();
+    }
+
+    throw new Error(errorMessage);
   }
 
   return response.json();
@@ -81,38 +149,111 @@ export const profileApi = {
     fetchJson(`/api/profiles/${id}`, { method: 'DELETE' }),
 };
 
+// Auth response types
+interface AuthResponse extends User {
+  token?: string;
+  needsPassword?: boolean;
+}
+
+interface ResetRequestResponse {
+  success: boolean;
+  message: string;
+  resetToken?: string; // Only in development
+  expiresIn?: string;
+}
+
+interface ResetPasswordResponse {
+  success: boolean;
+  message: string;
+  displayName: string;
+  token?: string;
+}
+
 // Auth API
 export const authApi = {
-  register: (data: { username: string; email?: string; password: string; displayName?: string }) =>
-    fetchJson<User>('/api/auth/register', {
+  register: async (data: { username: string; email?: string; password: string; displayName?: string }) => {
+    const response = await fetchJson<AuthResponse>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
-  login: (username: string, password: string) =>
-    fetchJson<User & { needsPassword?: boolean }>('/api/auth/login', {
+    });
+    // Store token if provided
+    if (response.token) {
+      setAuthToken(response.token);
+      setCurrentUserId(response.id);
+    }
+    return response;
+  },
+
+  login: async (username: string, password: string) => {
+    const response = await fetchJson<AuthResponse>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ username, password }),
-    }),
-  setPassword: (userId: string, password: string) =>
-    fetchJson<{ success: boolean }>('/api/auth/set-password', {
+    });
+    // Store token if provided
+    if (response.token) {
+      setAuthToken(response.token);
+      setCurrentUserId(response.id);
+    }
+    return response;
+  },
+
+  verify: () =>
+    fetchJson<User & { valid: boolean }>('/api/auth/verify'),
+
+  setPassword: async (password: string) => {
+    const response = await fetchJson<{ success: boolean; token?: string }>('/api/auth/set-password', {
       method: 'POST',
-      body: JSON.stringify({ userId, password }),
-    }),
+      body: JSON.stringify({ password }),
+    });
+    // Update token if provided
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
+
   updateEmail: (email: string) =>
     fetchJson<{ success: boolean }>('/api/auth/email', {
       method: 'PATCH',
       body: JSON.stringify({ email }),
     }),
-  changePassword: (currentPassword: string, newPassword: string) =>
-    fetchJson<{ success: boolean }>('/api/auth/change-password', {
+
+  changePassword: async (currentPassword: string, newPassword: string) => {
+    const response = await fetchJson<{ success: boolean; token?: string }>('/api/auth/change-password', {
       method: 'POST',
       body: JSON.stringify({ currentPassword, newPassword }),
-    }),
-  resetPassword: (username: string, newPassword: string) =>
-    fetchJson<{ success: boolean; message: string; displayName: string }>('/api/auth/reset-password', {
+    });
+    // Update token if provided
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
+
+  // Request password reset - returns token in development
+  requestReset: (username: string) =>
+    fetchJson<ResetRequestResponse>('/api/auth/request-reset', {
       method: 'POST',
-      body: JSON.stringify({ username, newPassword }),
+      body: JSON.stringify({ username }),
     }),
+
+  // Reset password with token
+  resetPassword: async (token: string, newPassword: string) => {
+    const response = await fetchJson<ResetPasswordResponse>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+    });
+    // Store token if provided (for immediate login)
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
+
+  // Logout - clear all auth data
+  logout: () => {
+    clearAuth();
+  },
 };
 
 // User API
@@ -199,6 +340,8 @@ export const setApi = {
 export const prApi = {
   list: (limit = 5) =>
     fetchJson<(PersonalRecord & { exerciseName: string })[]>(`/personal-records?limit=${limit}`),
+  getTrends: (exerciseId: string, type: PRTrendType = 'max_weight', weeks = 52) =>
+    fetchJson<PRTrends>(`/api/exercises/${exerciseId}/pr-trends?type=${type}&weeks=${weeks}`),
 };
 
 // Dashboard API

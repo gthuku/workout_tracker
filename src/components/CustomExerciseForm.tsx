@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { exerciseApi } from '../api/client';
 import type { Exercise, MuscleGroup, Equipment } from '../types';
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const MUSCLE_GROUPS: MuscleGroup[] = [
   'Chest', 'Back', 'Shoulders', 'Biceps', 'Triceps',
   'Quads', 'Hamstrings', 'Glutes', 'Calves', 'Core', 'Cardio',
 ];
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const EQUIPMENT_TYPES: Equipment[] = [
   'Barbell', 'Dumbbell', 'Machine', 'Bodyweight', 'Cable', 'Cardio',
 ];

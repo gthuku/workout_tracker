@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ChevronLeft, TrendingUp, TrendingDown, Minus, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, TrendingUp, TrendingDown, Minus, AlertTriangle, Trophy } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -9,36 +9,52 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
-import { exerciseApi } from '../api/client';
-import type { ExerciseHistory, Exercise } from '../types';
+import { exerciseApi, prApi } from '../api/client';
+import type { ExerciseHistory, Exercise, PRTrends, PRTrendType } from '../types';
 import { format, parseISO } from 'date-fns';
 import { ProgressIndicator } from '../components/ProgressIndicator';
+
+const PR_TYPE_LABELS: Record<PRTrendType, string> = {
+  max_weight: 'Weight',
+  max_volume: 'Volume',
+  max_reps: 'Reps',
+};
+
+const PR_TYPE_UNITS: Record<PRTrendType, string> = {
+  max_weight: 'lbs',
+  max_volume: 'lbs',
+  max_reps: 'reps',
+};
 
 export function ExerciseHistoryPage() {
   const { exerciseId } = useParams<{ exerciseId: string }>();
   const navigate = useNavigate();
   const [exercise, setExercise] = useState<Exercise | null>(null);
   const [history, setHistory] = useState<ExerciseHistory | null>(null);
+  const [prTrends, setPrTrends] = useState<PRTrends | null>(null);
+  const [selectedPRType, setSelectedPRType] = useState<PRTrendType>('max_weight');
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
     if (!exerciseId) return;
 
     try {
-      const [exercises, historyData] = await Promise.all([
+      const [exercises, historyData, trendsData] = await Promise.all([
         exerciseApi.list({ search: '' }),
         exerciseApi.getHistory(exerciseId, 8),
+        prApi.getTrends(exerciseId, selectedPRType, 52),
       ]);
 
       const foundExercise = exercises.find((e) => e.id === exerciseId);
       setExercise(foundExercise || null);
       setHistory(historyData);
+      setPrTrends(trendsData);
     } catch (error) {
       console.error('Failed to load exercise history:', error);
     } finally {
       setLoading(false);
     }
-  }, [exerciseId]);
+  }, [exerciseId, selectedPRType]);
 
   useEffect(() => {
     if (!exerciseId) return;
@@ -128,6 +144,118 @@ export function ExerciseHistoryPage() {
                     <li>Adding more reps or sets</li>
                     <li>Taking a deload week</li>
                   </ul>
+                </div>
+              </div>
+            )}
+
+            {/* PR Trends */}
+            {prTrends && prTrends.trends.length > 0 && (
+              <div className="card">
+                {/* Current PR Display */}
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 bg-gradient-to-br from-amber-500/20 to-yellow-500/20 rounded-lg">
+                      <Trophy className="text-amber-500" size={18} />
+                    </div>
+                    <h2 className="font-semibold">Personal Record</h2>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-2xl font-bold text-amber-400">
+                      {prTrends.currentPR.toLocaleString()}
+                    </p>
+                    <p className="text-xs text-slate-500">{PR_TYPE_UNITS[selectedPRType]}</p>
+                  </div>
+                </div>
+
+                {/* PR Type Tabs */}
+                <div className="flex gap-2 mb-4">
+                  {(Object.keys(PR_TYPE_LABELS) as PRTrendType[]).map((type) => (
+                    <button
+                      key={type}
+                      onClick={() => setSelectedPRType(type)}
+                      className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
+                        selectedPRType === type
+                          ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700 hover:border-slate-600'
+                      }`}
+                    >
+                      {PR_TYPE_LABELS[type]}
+                    </button>
+                  ))}
+                </div>
+
+                {/* PR Trend Chart */}
+                <div className="h-48">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart
+                      data={prTrends.trends.map((t) => ({
+                        ...t,
+                        date: format(parseISO(t.date), 'MMM d'),
+                      }))}
+                    >
+                      <XAxis
+                        dataKey="date"
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fill: '#64748b', fontSize: 12 }}
+                        tickFormatter={(value) =>
+                          selectedPRType === 'max_reps'
+                            ? value.toString()
+                            : value >= 1000
+                            ? `${(value / 1000).toFixed(1)}k`
+                            : value.toString()
+                        }
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: '#1e293b',
+                          border: 'none',
+                          borderRadius: '8px',
+                        }}
+                        labelStyle={{ color: '#94a3b8' }}
+                        formatter={(value, _name, props) => {
+                          const point = props.payload;
+                          const label = point.isNewPR ? `${value} (NEW PR!)` : value;
+                          return [label, PR_TYPE_LABELS[selectedPRType]];
+                        }}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#f59e0b"
+                        strokeWidth={2}
+                        dot={(props) => {
+                          const { cx, cy, payload } = props;
+                          if (payload.isNewPR) {
+                            return (
+                              <g key={`pr-${payload.date}`}>
+                                <circle cx={cx} cy={cy} r={8} fill="#f59e0b" opacity={0.3} />
+                                <circle cx={cx} cy={cy} r={5} fill="#f59e0b" stroke="#fef3c7" strokeWidth={2} />
+                              </g>
+                            );
+                          }
+                          return <circle key={`dot-${payload.date}`} cx={cx} cy={cy} r={4} fill="#f59e0b" strokeWidth={0} />;
+                        }}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-3 h-3 rounded-full bg-amber-500 border-2 border-amber-100" />
+                    <span>New PR</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    <span>Session</span>
+                  </div>
                 </div>
               </div>
             )}

@@ -1,5 +1,6 @@
-import db from './database.js';
+import { db } from './database.js';
 import { v4 as uuidv4 } from 'uuid';
+import logger from './utils/logger.js';
 
 interface ExerciseSeed {
   name: string;
@@ -103,17 +104,17 @@ const exercises: ExerciseSeed[] = [
   { name: 'Stair Climber', primaryMuscles: ['Cardio', 'Quads'], equipment: 'Cardio' },
 ];
 
-export function seedExercises(): void {
-  const result = db.queryOne('SELECT COUNT(*) as count FROM exercises WHERE is_custom = 0');
+export async function seedExercises(): Promise<void> {
+  const result = await db.queryOne<{ count: string }>('SELECT COUNT(*) as count FROM exercises WHERE is_custom = 0');
   const existingCount = parseInt(result?.count || '0');
 
   if (existingCount > 0) {
-    console.log(`Database already seeded with ${existingCount} exercises`);
+    logger.info({ count: existingCount }, 'Database already seeded');
     return;
   }
 
   for (const exercise of exercises) {
-    db.execute(
+    await db.execute(
       `INSERT INTO exercises (id, name, primary_muscles, equipment, is_custom)
        VALUES ($1, $2, $3, $4, 0)`,
       [
@@ -125,22 +126,22 @@ export function seedExercises(): void {
     );
   }
 
-  console.log(`Seeded ${exercises.length} exercises`);
+  logger.info({ count: exercises.length }, 'Seeded exercises');
 }
 
-export function createDefaultUser(): string {
-  const existing = db.queryOne('SELECT id FROM users WHERE username = $1', ['default']);
+export async function createDefaultUser(): Promise<string> {
+  const existing = await db.queryOne<{ id: string }>('SELECT id FROM users WHERE username = $1', ['default']);
 
   if (existing) {
     return existing.id;
   }
 
   const userId = uuidv4();
-  db.execute(
+  await db.execute(
     `INSERT INTO users (id, username, preferred_unit) VALUES ($1, 'default', 'lbs')`,
     [userId]
   );
 
-  console.log('Created default user');
+  logger.info('Created default user');
   return userId;
 }

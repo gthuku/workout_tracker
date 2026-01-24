@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList } from 'lucide-react';
+import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList, Sparkles } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import { dashboardApi } from '../api/client';
 import type { DashboardData } from '../types';
@@ -8,11 +8,11 @@ import { format, parseISO } from 'date-fns';
 import { useWorkoutStore } from '../store/workoutStore';
 
 const MUSCLE_GROUP_COLORS: Record<string, string> = {
-  Chest: '#ef4444',
+  Chest: '#f43f5e',
   Back: '#3b82f6',
   Shoulders: '#f59e0b',
   Biceps: '#10b981',
-  Triceps: '#8b5cf6',
+  Triceps: '#a855f7',
   Quads: '#ec4899',
   Hamstrings: '#06b6d4',
   Glutes: '#f97316',
@@ -52,7 +52,6 @@ export function Dashboard() {
       navigate('/workout');
     } catch (error) {
       console.error('Failed to start workout:', error);
-      // Error is already handled in the store, but we can show a toast or alert here if needed
     } finally {
       setStartingWorkout(false);
     }
@@ -67,10 +66,13 @@ export function Dashboard() {
   }
 
   return (
-    <div className="p-4 max-w-lg mx-auto space-y-6">
+    <div className="p-4 max-w-lg mx-auto space-y-6 page-transition">
       {/* Header */}
-      <div className="text-center">
-        <h1 className="text-2xl font-bold">Workout Tracker</h1>
+      <div className="pt-4">
+        <p className="text-sm text-zinc-500 font-medium">Welcome back</p>
+        <h1 className="text-3xl font-bold tracking-tight">
+          <span className="gradient-text">Workout</span> Tracker
+        </h1>
       </div>
 
       {/* Error Display */}
@@ -82,31 +84,35 @@ export function Dashboard() {
               onClick={clearError}
               className="ml-auto text-red-400 hover:text-red-300"
             >
-              ✕
+              &times;
             </button>
           </div>
         </div>
       )}
 
       {/* Stats Row */}
-      <div className="flex gap-4">
-        <div className="card flex-1 flex items-center gap-3">
-          <div className="p-2 bg-orange-500/20 rounded-lg">
-            <Flame className="text-orange-500" size={24} />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">{data?.streak || 0}</p>
-            <p className="text-xs text-slate-400">Day Streak</p>
+      <div className="grid grid-cols-2 gap-4">
+        <div className="card group hover:border-orange-500/30">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gradient-to-br from-orange-500/20 to-red-500/20 rounded-xl">
+              <Flame className="text-orange-500" size={24} />
+            </div>
+            <div>
+              <p className="stat-value text-3xl">{data?.streak || 0}</p>
+              <p className="text-xs text-zinc-500 font-medium">Day Streak</p>
+            </div>
           </div>
         </div>
 
-        <div className="card flex-1 flex items-center gap-3">
-          <div className="p-2 bg-blue-500/20 rounded-lg">
-            <Dumbbell className="text-blue-500" size={24} />
-          </div>
-          <div>
-            <p className="text-2xl font-bold">{data?.weeklyWorkoutCount || 0}</p>
-            <p className="text-xs text-slate-400">This Week</p>
+        <div className="card group hover:border-blue-500/30">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-xl">
+              <Dumbbell className="text-blue-500" size={24} />
+            </div>
+            <div>
+              <p className="stat-value text-3xl">{data?.weeklyWorkoutCount || 0}</p>
+              <p className="text-xs text-zinc-500 font-medium">This Week</p>
+            </div>
           </div>
         </div>
       </div>
@@ -115,9 +121,9 @@ export function Dashboard() {
       {activeWorkout ? (
         <button
           onClick={() => navigate('/workout')}
-          className="btn btn-success w-full py-6 text-xl font-bold"
+          className="btn btn-success w-full py-6 text-lg font-bold"
         >
-          <Play size={28} />
+          <Play size={24} fill="white" />
           Continue Workout
         </button>
       ) : (
@@ -125,18 +131,18 @@ export function Dashboard() {
           <button
             onClick={handleStartWorkout}
             disabled={startingWorkout}
-            className="btn btn-primary w-full py-6 text-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn btn-primary w-full py-6 text-lg font-bold disabled:opacity-50 disabled:cursor-not-allowed group"
           >
             {startingWorkout ? (
-              <div className="animate-spin rounded-full h-7 w-7 border-t-2 border-b-2 border-white" />
+              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-white" />
             ) : (
-              <Play size={28} />
+              <Play size={24} fill="white" className="group-hover:scale-110 transition-transform" />
             )}
             {startingWorkout ? 'Starting...' : 'Start Workout'}
           </button>
           <button
             onClick={() => navigate('/log-past')}
-            className="btn btn-secondary w-full py-3"
+            className="btn btn-secondary w-full"
           >
             <ClipboardList size={20} />
             Log Past Workout
@@ -148,27 +154,34 @@ export function Dashboard() {
       {data?.recentPRs && data.recentPRs.length > 0 && (
         <div className="card">
           <div className="flex items-center gap-2 mb-4">
-            <Trophy className="text-amber-500" size={20} />
+            <div className="p-2 bg-gradient-to-br from-amber-500/20 to-yellow-500/20 rounded-lg">
+              <Trophy className="text-amber-500" size={18} />
+            </div>
             <h2 className="font-semibold">Recent PRs</h2>
+            <Sparkles size={14} className="text-amber-500 ml-auto" />
           </div>
-          <div className="space-y-2">
+          <div className="space-y-1">
             {data.recentPRs.slice(0, 3).map((pr) => (
               <div
                 key={pr.id}
-                className="flex items-center justify-between py-2 border-b border-slate-700 last:border-0"
+                onClick={() => navigate(`/exercises/${pr.exerciseId}`)}
+                className="flex items-center justify-between py-3 border-b border-zinc-800/50 last:border-0 cursor-pointer hover:bg-white/[0.02] -mx-4 px-4 transition-colors"
               >
                 <div>
                   <p className="font-medium">{pr.exerciseName}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-zinc-500">
                     {pr.type === 'max_weight' && `${pr.value} lbs`}
                     {pr.type === 'max_volume' && `${pr.value} lbs volume`}
                     {pr.type === 'max_reps' && `${pr.value} reps`}
                   </p>
                 </div>
-                <span className="pr-badge">
-                  <Trophy size={14} />
-                  PR
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="pr-badge">
+                    <Trophy size={12} />
+                    PR
+                  </span>
+                  <ChevronRight size={16} className="text-zinc-600" />
+                </div>
               </div>
             ))}
           </div>
@@ -192,13 +205,13 @@ export function Dashboard() {
                   dataKey="muscleGroup"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fill: '#94a3b8', fontSize: 12 }}
+                  tick={{ fill: '#71717a', fontSize: 12 }}
                 />
-                <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
+                <Bar dataKey="percentage" radius={[0, 6, 6, 0]}>
                   {data.weeklyMuscleGroups.slice(0, 6).map((entry) => (
                     <Cell
                       key={entry.muscleGroup}
-                      fill={MUSCLE_GROUP_COLORS[entry.muscleGroup] || '#64748b'}
+                      fill={MUSCLE_GROUP_COLORS[entry.muscleGroup] || '#3f3f46'}
                     />
                   ))}
                 </Bar>
@@ -216,32 +229,34 @@ export function Dashboard() {
             className="flex items-center justify-between w-full mb-4 group"
           >
             <div className="flex items-center gap-2">
-              <Calendar className="text-slate-400" size={20} />
+              <div className="p-2 bg-gradient-to-br from-zinc-700/50 to-zinc-800/50 rounded-lg">
+                <Calendar className="text-zinc-400" size={18} />
+              </div>
               <h2 className="font-semibold">Recent Workouts</h2>
             </div>
-            <div className="flex items-center gap-1 text-blue-400 group-hover:text-blue-300">
-              <span className="text-sm">View all</span>
-              <ChevronRight size={18} />
+            <div className="flex items-center gap-1 text-blue-400 group-hover:text-blue-300 transition-colors">
+              <span className="text-sm font-medium">View all</span>
+              <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
             </div>
           </button>
-          <div className="space-y-2">
+          <div className="space-y-1">
             {data.recentWorkouts.map((workout) => (
               <div
                 key={workout.id}
-                className="flex items-center justify-between py-2 border-b border-slate-700 last:border-0 cursor-pointer hover:bg-slate-700/50 -mx-2 px-2 rounded transition-colors"
+                className="flex items-center justify-between py-3 border-b border-zinc-800/50 last:border-0 cursor-pointer hover:bg-white/[0.02] -mx-4 px-4 transition-colors"
                 onClick={() => navigate(`/history/${workout.id}`)}
               >
                 <div>
                   <p className="font-medium">{workout.name || 'Workout'}</p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-zinc-500">
                     {format(parseISO(workout.date), 'MMM d, yyyy')}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   {workout.duration && workout.duration > 0 && (
-                    <span className="text-sm text-slate-400">{workout.duration} min</span>
+                    <span className="text-sm text-zinc-500">{workout.duration} min</span>
                   )}
-                  <ChevronRight size={18} className="text-slate-500" />
+                  <ChevronRight size={16} className="text-zinc-600" />
                 </div>
               </div>
             ))}
@@ -251,10 +266,12 @@ export function Dashboard() {
 
       {/* Empty State */}
       {(!data?.recentWorkouts || data.recentWorkouts.length === 0) && (
-        <div className="card text-center py-8">
-          <Dumbbell className="mx-auto text-slate-600 mb-4" size={48} />
-          <p className="text-slate-400">No workouts yet</p>
-          <p className="text-sm text-slate-500">Start your first workout to track progress!</p>
+        <div className="card text-center py-12">
+          <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-2xl flex items-center justify-center">
+            <Dumbbell className="text-zinc-600" size={32} />
+          </div>
+          <p className="text-zinc-400 font-medium">No workouts yet</p>
+          <p className="text-sm text-zinc-600 mt-1">Start your first workout to track progress!</p>
         </div>
       )}
     </div>
