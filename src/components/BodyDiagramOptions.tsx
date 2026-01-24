@@ -196,14 +196,14 @@ export function BodyDiagramNeonGlow({ muscleGroups }: BodyDiagramProps) {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-3 gap-y-1 mt-3 justify-center text-[10px]">
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.chest}}></span>Chest/Back</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.shoulders}}></span>Shoulders</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.biceps}}></span>Biceps</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.triceps}}></span>Triceps</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.core}}></span>Core</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.quads}}></span>Quads</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.hamstrings}}></span>Hamstrings</span>
-        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background: muscleColors.glutes}}></span>Glutes</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.chest }}></span>Chest/Back</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.shoulders }}></span>Shoulders</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.biceps }}></span>Biceps</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.triceps }}></span>Triceps</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.core }}></span>Core</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.quads }}></span>Quads</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.hamstrings }}></span>Hamstrings</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: muscleColors.glutes }}></span>Glutes</span>
       </div>
     </div>
   );
@@ -341,12 +341,12 @@ export function BodyDiagramGeometric({ muscleGroups }: BodyDiagramProps) {
       <div className="flex items-center gap-1 mt-3">
         <span className="text-[10px] text-slate-500">Rest</span>
         <div className="flex h-2 rounded overflow-hidden">
-          <div className="w-4" style={{background: '#1e3a8a'}}></div>
-          <div className="w-4" style={{background: '#0369a1'}}></div>
-          <div className="w-4" style={{background: '#059669'}}></div>
-          <div className="w-4" style={{background: '#ca8a04'}}></div>
-          <div className="w-4" style={{background: '#ea580c'}}></div>
-          <div className="w-4" style={{background: '#dc2626'}}></div>
+          <div className="w-4" style={{ background: '#1e3a8a' }}></div>
+          <div className="w-4" style={{ background: '#0369a1' }}></div>
+          <div className="w-4" style={{ background: '#059669' }}></div>
+          <div className="w-4" style={{ background: '#ca8a04' }}></div>
+          <div className="w-4" style={{ background: '#ea580c' }}></div>
+          <div className="w-4" style={{ background: '#dc2626' }}></div>
         </div>
         <span className="text-[10px] text-slate-500">Active</span>
       </div>
@@ -632,10 +632,4 @@ export function BodyDiagramHeatmap({ muscleGroups }: BodyDiagramProps) {
   );
 }
 
-// Export all options
-export const BodyDiagramOptions = {
-  NeonGlow: BodyDiagramNeonGlow,
-  Geometric: BodyDiagramGeometric,
-  Silhouette: BodyDiagramSilhouette,
-  Heatmap: BodyDiagramHeatmap,
-};
+

@@ -8,7 +8,6 @@ import {
   YAxis,
   ResponsiveContainer,
   Tooltip,
-  ReferenceDot,
 } from 'recharts';
 import { exerciseApi, prApi } from '../api/client';
 import type { ExerciseHistory, Exercise, PRTrends, PRTrendType } from '../types';
