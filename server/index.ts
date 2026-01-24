@@ -2,10 +2,11 @@ import express, { Request, Response, NextFunction, Router } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { initializeDatabase, closeDatabase } from './database.js';
+import { initializeDatabase, closeDatabase, healthCheck as dbHealthCheck } from './database.js';
 import { seedExercises, createDefaultUser } from './seed.js';
 import logger from './utils/logger.js';
 import cache from './utils/cache.js';
+import { requestIdMiddleware } from './middleware/requestId.js';
 import { errorHandler, asyncHandler, UnauthorizedError } from './middleware/errorHandler.js';
 import { authService, userService, workoutService, exerciseService, statsService } from './services/index.js';
 import {
@@ -29,6 +30,7 @@ import {
   HistoryQuerySchema,
   MuscleGroupsQuerySchema,
   PaginationSchema,
+  PRTrendsQuerySchema,
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
@@ -90,6 +92,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
+app.use(requestIdMiddleware);
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(apiLimiter);
@@ -104,22 +107,65 @@ app.use((req, res, next) => {
       path: req.path,
       status: res.statusCode,
       duration: `${duration}ms`,
-      userId: (req as any).userId,
+      userId: req.userId,
     }, 'Request completed');
   });
   next();
 });
 
+// ============ HEALTH CHECK ============
+app.get('/health', asyncHandler(async (req, res) => {
+  const startTime = Date.now();
+
+  // Check database
+  const dbStatus = await dbHealthCheck();
+
+  // Check cache
+  const cacheStatus = await cache.healthCheck();
+
+  // Memory usage
+  const memUsage = process.memoryUsage();
+  const memory = {
+    heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+    heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+    rss: Math.round(memUsage.rss / 1024 / 1024),
+    external: Math.round(memUsage.external / 1024 / 1024),
+  };
+
+  // Overall status
+  const isHealthy = dbStatus.status === 'healthy';
+  const status = isHealthy ? 'healthy' : 'unhealthy';
+
+  const response = {
+    status,
+    timestamp: new Date().toISOString(),
+    requestId: req.requestId,
+    uptime: Math.round(process.uptime()),
+    version: process.env.npm_package_version || '0.0.0',
+    checks: {
+      database: dbStatus,
+      cache: cacheStatus,
+    },
+    memory: {
+      ...memory,
+      unit: 'MB',
+    },
+    responseTime: `${Date.now() - startTime}ms`,
+  };
+
+  res.status(isHealthy ? 200 : 503).json(response);
+}));
+
 // ============ AUTHENTICATION MIDDLEWARE ============
-async function authenticate(req: Request, res: Response, next: NextFunction) {
+async function authenticate(req: Request, _res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
     const payload = authService.verifyToken(token);
     if (payload) {
-      (req as any).userId = payload.userId;
-      (req as any).username = payload.username;
-      (req as any).authMethod = 'jwt';
+      req.userId = payload.userId;
+      req.username = payload.username;
+      req.authMethod = 'jwt';
       return next();
     }
   }
@@ -128,27 +174,28 @@ async function authenticate(req: Request, res: Response, next: NextFunction) {
   if (userId) {
     const user = await userService.verifyUserExists(userId);
     if (user) {
-      (req as any).userId = user.id;
-      (req as any).username = user.username;
-      (req as any).authMethod = 'header';
+      req.userId = user.id;
+      req.username = user.username;
+      req.authMethod = 'header';
       return next();
     }
   }
 
-  (req as any).userId = null;
-  (req as any).authMethod = 'none';
+  req.userId = null;
+  req.username = null;
+  req.authMethod = 'none';
   next();
 }
 
-function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!(req as any).userId) {
+function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  if (!req.userId) {
     return next(new UnauthorizedError());
   }
   next();
 }
 
 function getUserId(req: Request): string {
-  return (req as any).userId || '';
+  return req.userId || '';
 }
 
 app.use(authenticate);
@@ -261,6 +308,12 @@ v1Router.get('/exercises/:exerciseId/history', requireAuth, asyncHandler(async (
 v1Router.get('/exercises/:exerciseId/previous', requireAuth, asyncHandler(async (req, res) => {
   const previous = await exerciseService.getPrevious(getUserId(req), req.params.exerciseId);
   res.json(previous);
+}));
+
+v1Router.get('/exercises/:exerciseId/pr-trends', requireAuth, asyncHandler(async (req, res) => {
+  const { type, weeks } = PRTrendsQuerySchema.parse(req.query);
+  const trends = await statsService.getPRTrends(getUserId(req), req.params.exerciseId, type, weeks);
+  res.json(trends);
 }));
 
 // --- Workouts ---

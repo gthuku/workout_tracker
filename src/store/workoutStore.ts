@@ -223,7 +223,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
       set({ workoutExercises: updatedExercises });
 
       // Return PR status from server response (if available) or client calculation
-      const isNewPR = (rawSet as any).isPR || false;
+      const isNewPR = (rawSet as { isPR?: boolean }).isPR || false;
       
       return { isNewPR };
     } catch (error) {

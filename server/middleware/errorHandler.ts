@@ -44,26 +44,25 @@ export class ConflictError extends AppError {
   }
 }
 
-// Error handler middleware
+// Error handler middleware (next param required by Express error handler signature)
 export function errorHandler(
   err: Error,
   req: Request,
   res: Response,
-  _next: NextFunction
+  next: NextFunction // eslint-disable-line @typescript-eslint/no-unused-vars
 ): void {
   // Log error
   const logContext = {
     method: req.method,
     path: req.path,
-    userId: (req as any).userId,
+    userId: req.userId,
     error: err.message,
     stack: err.stack,
   };
 
   // Handle Zod validation errors
-  if (err.name === 'ZodError' || (err as any).issues) {
-    const zodErr = err as ZodError;
-    const issues = zodErr.issues || [];
+  if (err instanceof ZodError) {
+    const issues = err.issues || [];
     const message = issues.map(e => `${e.path.join('.') || 'input'}: ${e.message}`).join(', ');
     logger.warn({ ...logContext, type: 'ValidationError' }, 'Validation failed');
     res.status(400).json({ error: message || 'Validation failed' });
@@ -88,7 +87,7 @@ export function errorHandler(
 
 // Async handler wrapper to catch async errors
 export function asyncHandler(
-  fn: (req: Request, res: Response, next: NextFunction) => Promise<any>
+  fn: (req: Request, res: Response, next: NextFunction) => Promise<void>
 ) {
   return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);

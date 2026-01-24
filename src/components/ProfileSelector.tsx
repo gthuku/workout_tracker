@@ -72,8 +72,9 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
 
       localStorage.setItem('selectedProfileId', user.id);
       onProfileSelected(user.id);
-    } catch (err: any) {
-      setError(err.message || 'Invalid username or password');
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Invalid username or password');
     } finally {
       setSubmitting(false);
     }
@@ -108,8 +109,9 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
 
       localStorage.setItem('selectedProfileId', user.id);
       onProfileSelected(user.id);
-    } catch (err: any) {
-      setError(err.message || 'Failed to create account');
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to create account');
     } finally {
       setSubmitting(false);
     }
@@ -140,8 +142,9 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
       await authApi.setPassword(pendingUser.id, password);
       localStorage.setItem('selectedProfileId', pendingUser.id);
       onProfileSelected(pendingUser.id);
-    } catch (err: any) {
-      setError(err.message || 'Failed to set password');
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to set password');
     } finally {
       setSubmitting(false);
     }
@@ -181,8 +184,9 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
         setResetSuccess('');
         setMode('login');
       }, 2000);
-    } catch (err: any) {
-      setError(err.message || 'Failed to reset password');
+    } catch (err) {
+      const error = err as Error;
+      setError(error.message || 'Failed to reset password');
     } finally {
       setSubmitting(false);
     }

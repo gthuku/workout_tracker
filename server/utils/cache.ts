@@ -29,6 +29,9 @@ export const CACHE_KEYS = {
 class CacheService {
   private client: Redis | null = null;
   private connected = false;
+  private connecting = false;
+  private connectionAttempts = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 3;
 
   async connect(): Promise<void> {
     if (!CACHE_ENABLED) {
@@ -36,15 +39,26 @@ class CacheService {
       return;
     }
 
+    if (this.connecting) {
+      logger.debug('Redis connection already in progress');
+      return;
+    }
+
+    this.connecting = true;
+
     try {
       this.client = new Redis(REDIS_URL, {
         maxRetriesPerRequest: 3,
+        connectTimeout: 5000,
         retryStrategy: (times) => {
-          if (times > 3) {
+          this.connectionAttempts = times;
+          if (times > this.MAX_RECONNECT_ATTEMPTS) {
             logger.warn('Redis connection failed, cache disabled');
             return null; // Stop retrying
           }
-          return Math.min(times * 100, 3000);
+          const delay = Math.min(times * 200, 3000);
+          logger.debug({ attempt: times, delay }, 'Redis retry scheduled');
+          return delay;
         },
         lazyConnect: true,
       });
@@ -55,8 +69,13 @@ class CacheService {
       });
 
       this.client.on('connect', () => {
-        logger.info('Redis connected');
+        logger.debug('Redis TCP connection established');
+      });
+
+      this.client.on('ready', () => {
+        logger.info('Redis connected and ready');
         this.connected = true;
+        this.connectionAttempts = 0;
       });
 
       this.client.on('close', () => {
@@ -64,10 +83,16 @@ class CacheService {
         this.connected = false;
       });
 
+      this.client.on('reconnecting', (delay: number) => {
+        logger.debug({ delay }, 'Redis reconnecting');
+      });
+
       await this.client.connect();
     } catch (error) {
       logger.warn({ error }, 'Failed to connect to Redis, cache disabled');
       this.client = null;
+    } finally {
+      this.connecting = false;
     }
   }
 
@@ -82,6 +107,25 @@ class CacheService {
 
   isConnected(): boolean {
     return this.connected && this.client !== null;
+  }
+
+  // Health check for monitoring
+  async healthCheck(): Promise<{ status: 'healthy' | 'unhealthy' | 'disabled'; latencyMs?: number }> {
+    if (!CACHE_ENABLED) {
+      return { status: 'disabled' };
+    }
+
+    if (!this.isConnected()) {
+      return { status: 'unhealthy' };
+    }
+
+    try {
+      const start = Date.now();
+      await this.client!.ping();
+      return { status: 'healthy', latencyMs: Date.now() - start };
+    } catch {
+      return { status: 'unhealthy' };
+    }
   }
 
   async get<T>(key: string): Promise<T | null> {

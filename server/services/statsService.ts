@@ -14,6 +14,28 @@ interface MuscleGroupVolume {
   percentage: number;
 }
 
+interface DbWorkout {
+  id: string;
+  user_id: string;
+  name: string | null;
+  date: string;
+  duration: number | null;
+  notes: string | null;
+  is_complete: number;
+  created_at: string;
+}
+
+interface DbPersonalRecord {
+  id: string;
+  user_id: string;
+  exercise_id: string;
+  type: string;
+  value: number;
+  workout_id: string;
+  achieved_at: string;
+  exercise_name: string;
+}
+
 export const statsService = {
   async getDashboard(userId: string) {
     // Try to get from cache first
@@ -32,7 +54,7 @@ export const statsService = {
         );
 
         // Recent workouts with exercise data in single query (avoid N+1)
-        const recentWorkouts = await db.query(
+        const recentWorkouts = await db.query<DbWorkout>(
           `SELECT * FROM workouts
            WHERE user_id = $1 AND is_complete = 1
            ORDER BY date DESC LIMIT 3`,
@@ -40,7 +62,7 @@ export const statsService = {
         );
 
         // Recent PRs with exercise name (single JOIN query)
-        const recentPRs = await db.query(
+        const recentPRs = await db.query<DbPersonalRecord>(
           `SELECT pr.*, e.name as exercise_name
            FROM personal_records pr
            JOIN exercises e ON pr.exercise_id = e.id
@@ -66,8 +88,8 @@ export const statsService = {
         return {
           streak,
           weeklyWorkoutCount: parseInt(weeklyCountResult?.count || '0'),
-          recentWorkouts: recentWorkouts.map((w: any) => ({ ...w, isComplete: true })),
-          recentPRs: recentPRs.map((pr: any) => ({ ...pr, exerciseName: pr.exercise_name })),
+          recentWorkouts: recentWorkouts.map((w) => ({ ...w, isComplete: true })),
+          recentPRs: recentPRs.map((pr) => ({ ...pr, exerciseName: pr.exercise_name })),
           weeklyMuscleGroups: muscleGroupVolumes,
         };
       },
@@ -109,20 +131,26 @@ export const statsService = {
   },
 
   async getPersonalRecords(userId: string, limit: number) {
-    const prs = await db.query(
-      `SELECT pr.*, e.name as exercise_name
-       FROM personal_records pr
-       JOIN exercises e ON pr.exercise_id = e.id
-       WHERE pr.user_id = $1
-       ORDER BY pr.achieved_at DESC
-       LIMIT $2`,
-      [userId, limit]
-    );
+    return cache.wrap(
+      `${CACHE_KEYS.PERSONAL_RECORDS(userId)}:${limit}`,
+      async () => {
+        const prs = await db.query<DbPersonalRecord>(
+          `SELECT pr.*, e.name as exercise_name
+           FROM personal_records pr
+           JOIN exercises e ON pr.exercise_id = e.id
+           WHERE pr.user_id = $1
+           ORDER BY pr.achieved_at DESC
+           LIMIT $2`,
+          [userId, limit]
+        );
 
-    return prs.map((pr: any) => ({
-      ...pr,
-      exerciseName: pr.exercise_name,
-    }));
+        return prs.map((pr) => ({
+          ...pr,
+          exerciseName: pr.exercise_name,
+        }));
+      },
+      CACHE_TTL.MEDIUM
+    );
   },
 
   async calculateStreak(userId: string): Promise<number> {
@@ -225,6 +253,76 @@ export const statsService = {
     }
 
     return imbalances;
+  },
+
+  async getPRTrends(
+    userId: string,
+    exerciseId: string,
+    type: 'max_weight' | 'max_volume' | 'max_reps' = 'max_weight',
+    weeks = 52
+  ) {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - weeks * 7);
+
+    // Query workout_sets grouped by workout date
+    const sessions = await db.query<{
+      date: string;
+      max_weight: string;
+      total_volume: string;
+      total_reps: string;
+    }>(
+      `SELECT
+        w.date,
+        MAX(ws.weight) as max_weight,
+        SUM(ws.weight * ws.reps) as total_volume,
+        SUM(ws.reps) as total_reps
+      FROM workout_sets ws
+      JOIN workouts w ON ws.workout_id = w.id
+      WHERE w.user_id = $1
+        AND ws.exercise_id = $2
+        AND w.is_complete = 1
+        AND w.date >= $3
+      GROUP BY w.date
+      ORDER BY w.date ASC`,
+      [userId, exerciseId, startDate.toISOString().split('T')[0]]
+    );
+
+    // Calculate running max and flag PR moments
+    let runningMax = 0;
+    const trends: { date: string; value: number; isNewPR: boolean }[] = [];
+
+    for (const session of sessions) {
+      let value: number;
+      switch (type) {
+        case 'max_weight':
+          value = parseFloat(session.max_weight) || 0;
+          break;
+        case 'max_volume':
+          value = parseFloat(session.total_volume) || 0;
+          break;
+        case 'max_reps':
+          value = parseInt(session.total_reps) || 0;
+          break;
+      }
+
+      const isNewPR = value > runningMax;
+      if (isNewPR) {
+        runningMax = value;
+      }
+
+      trends.push({
+        date: session.date,
+        value,
+        isNewPR,
+      });
+    }
+
+    return {
+      exerciseId,
+      type,
+      currentPR: runningMax,
+      trends,
+    };
   },
 };
 

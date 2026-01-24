@@ -126,6 +126,11 @@ export const MuscleGroupsQuerySchema = z.object({
   period: z.enum(['week', 'month']).default('week'),
 });
 
+export const PRTrendsQuerySchema = z.object({
+  type: z.enum(['max_weight', 'max_volume', 'max_reps']).default('max_weight'),
+  weeks: z.coerce.number().min(1).max(104).default(52),
+});
+
 // Type exports
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;

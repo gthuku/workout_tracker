@@ -209,5 +209,19 @@ export async function closeDatabase(): Promise<void> {
   }
 }
 
+export async function healthCheck(): Promise<{ status: 'healthy' | 'unhealthy'; latencyMs?: number; error?: string }> {
+  if (!sqlite) {
+    return { status: 'unhealthy', error: 'Database not initialized' };
+  }
+
+  try {
+    const start = Date.now();
+    sqlite.prepare('SELECT 1').get();
+    return { status: 'healthy', latencyMs: Date.now() - start };
+  } catch (error) {
+    return { status: 'unhealthy', error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
 export { db };
 export default db;

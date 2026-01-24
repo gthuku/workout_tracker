@@ -13,6 +13,7 @@ const Stats = lazy(() => import('./pages/Stats').then(m => ({ default: m.Stats }
 const WorkoutHistory = lazy(() => import('./pages/WorkoutHistory').then(m => ({ default: m.WorkoutHistory })));
 const WorkoutDetail = lazy(() => import('./pages/WorkoutDetail').then(m => ({ default: m.WorkoutDetail })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+const DiagramPreview = lazy(() => import('./pages/DiagramPreview').then(m => ({ default: m.DiagramPreview })));
 
 // Loading fallback component
 function PageLoader() {
@@ -58,6 +59,7 @@ function App() {
             <Route path="/history" element={<WorkoutHistory />} />
             <Route path="/history/:workoutId" element={<WorkoutDetail />} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/diagram-preview" element={<DiagramPreview />} />
           </Route>
         </Routes>
       </Suspense>

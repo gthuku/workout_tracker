@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
 import { NotFoundError, ForbiddenError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import cache, { CACHE_KEYS } from '../utils/cache.js';
 import type { CreateWorkoutInput, UpdateWorkoutInput, CreateSetInput, UpdateSetInput } from '../schemas/index.js';
 
 interface DbWorkout {
@@ -169,6 +170,9 @@ export const workoutService = {
       throw new Error('Failed to create workout');
     }
 
+    // Invalidate workout list and dashboard caches
+    await cache.invalidateWorkouts(userId);
+
     logger.info({ workoutId: id, userId }, 'Workout created');
     return { ...workout, isComplete: workout.is_complete, sets: [] };
   },
@@ -184,7 +188,7 @@ export const workoutService = {
 
     const { name, notes, isComplete, duration } = input;
     const updates: string[] = [];
-    const params: any[] = [];
+    const params: unknown[] = [];
     let paramIndex = 1;
 
     if (name !== undefined) {
@@ -221,6 +225,12 @@ export const workoutService = {
       throw new NotFoundError('Workout');
     }
 
+    // Invalidate workout and list caches
+    await Promise.all([
+      cache.del(CACHE_KEYS.WORKOUT(workoutId)),
+      cache.invalidateWorkouts(userId),
+    ]);
+
     logger.info({ workoutId, userId }, 'Workout updated');
     return { ...updated, isComplete: updated.is_complete };
   },
@@ -239,12 +249,22 @@ export const workoutService = {
       await db.execute('DELETE FROM workouts WHERE id = $1', [workoutId]);
     });
 
+    // Invalidate workout and list caches
+    await Promise.all([
+      cache.del(CACHE_KEYS.WORKOUT(workoutId)),
+      cache.invalidateWorkouts(userId),
+    ]);
+
     logger.info({ workoutId, userId }, 'Workout deleted');
     return { success: true };
   },
 
   async deleteAll(userId: string) {
     await db.execute('DELETE FROM workouts WHERE user_id = $1', [userId]);
+
+    // Invalidate all workout caches for user
+    await cache.invalidateWorkouts(userId);
+
     logger.info({ userId }, 'All workouts deleted');
     return { success: true };
   },
@@ -258,6 +278,12 @@ export const workoutService = {
     await db.execute('DELETE FROM workouts WHERE user_id = $1 AND is_complete = 0', [userId]);
 
     const deletedCount = parseInt(result?.count || '0');
+
+    // Invalidate workout caches if any were deleted
+    if (deletedCount > 0) {
+      await cache.invalidateWorkouts(userId);
+    }
+
     logger.info({ userId, deletedCount }, 'Incomplete workouts deleted');
 
     return {
@@ -352,6 +378,8 @@ export const workoutService = {
     const maxWeightPR = prMap.get('max_weight');
     const maxVolumePR = prMap.get('max_volume');
 
+    let prUpdated = false;
+
     // Update max weight PR if needed
     if (!maxWeightPR || weight > maxWeightPR.value) {
       if (maxWeightPR) {
@@ -368,6 +396,7 @@ export const workoutService = {
         );
       }
       logger.info({ userId, exerciseId, weight }, 'New max weight PR');
+      prUpdated = true;
     }
 
     // Update max volume PR if needed
@@ -386,6 +415,12 @@ export const workoutService = {
         );
       }
       logger.info({ userId, exerciseId, volume }, 'New max volume PR');
+      prUpdated = true;
+    }
+
+    // Invalidate PR cache if updated
+    if (prUpdated) {
+      await cache.del(CACHE_KEYS.PERSONAL_RECORDS(userId));
     }
   },
 

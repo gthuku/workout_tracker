@@ -14,7 +14,12 @@
     "deploy:frontend": "npm run build:client && aws s3 sync dist/ s3://workout-log-frontend --delete --cache-control max-age=31536000,public",
     "deploy:backend": "eb deploy",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "migrate": "tsx server/migrations/runner.ts migrate",
+    "migrate:rollback": "tsx server/migrations/runner.ts rollback",
+    "migrate:status": "tsx server/migrations/runner.ts status",
+    "migrate:create": "tsx server/migrations/create.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

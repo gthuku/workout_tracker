@@ -1,112 +1,295 @@
 @import "tailwindcss";
 
 :root {
+  /* Modern dark theme inspired by Webflow */
   --color-primary: #3b82f6;
-  --color-primary-dark: #2563eb;
+  --color-primary-hover: #2563eb;
+  --color-accent: #d946ef;
+  --color-accent-light: #f0abfc;
   --color-success: #22c55e;
-  --color-warning: #eab308;
+  --color-warning: #fbbf24;
   --color-danger: #ef4444;
-  --color-background: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-light: #334155;
+
+  /* Dark backgrounds */
+  --color-bg-primary: #0a0a0a;
+  --color-bg-secondary: #111111;
+  --color-bg-tertiary: #1a1a1a;
+  --color-bg-elevated: #222222;
+
+  /* Borders */
+  --color-border: #2a2a2a;
+  --color-border-light: #333333;
+
+  /* Text */
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a1a1aa;
+  --color-text-muted: #71717a;
 }
 
 body {
-  @apply bg-slate-900 text-slate-100 min-h-screen;
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Subtle gradient overlay */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(217, 70, 239, 0.15), transparent),
+    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(59, 130, 246, 0.1), transparent);
+  pointer-events: none;
+  z-index: 0;
 }
 
 #root {
-  @apply min-h-screen;
+  min-height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 
-/* Large touch targets for gym use */
+/* Modern button styles */
 .btn {
-  @apply min-h-[44px] px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2;
+  @apply min-h-[48px] px-6 py-3 rounded-xl font-semibold transition-all duration-200 flex items-center justify-center gap-2;
+  @apply shadow-lg hover:shadow-xl active:scale-[0.98];
 }
 
 .btn-primary {
-  @apply bg-blue-600 hover:bg-blue-700 text-white active:scale-95;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.4);
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 6px 20px 0 rgba(59, 130, 246, 0.5);
 }
 
 .btn-secondary {
-  @apply bg-slate-700 hover:bg-slate-600 text-white active:scale-95;
+  background: var(--color-bg-elevated);
+  color: var(--color-text-primary);
+  border: 1px solid var(--color-border-light);
+}
+
+.btn-secondary:hover {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
 }
 
 .btn-success {
-  @apply bg-green-600 hover:bg-green-700 text-white active:scale-95;
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(34, 197, 94, 0.4);
+}
+
+.btn-success:hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
 }
 
 .btn-danger {
-  @apply bg-red-600 hover:bg-red-700 text-white active:scale-95;
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(239, 68, 68, 0.4);
 }
 
-/* Card styles */
+.btn-danger:hover {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+}
+
+.btn-accent {
+  background: linear-gradient(135deg, #d946ef 0%, #a855f7 100%);
+  color: white;
+  box-shadow: 0 4px 14px 0 rgba(217, 70, 239, 0.4);
+}
+
+.btn-accent:hover {
+  background: linear-gradient(135deg, #c026d3 0%, #9333ea 100%);
+}
+
+/* Modern card styles */
 .card {
-  @apply bg-slate-800 rounded-xl p-4 shadow-lg;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
+  transition: all 0.2s ease;
 }
 
-/* Input styles for gym use */
+.card:hover {
+  border-color: var(--color-border-light);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -4px rgba(0, 0, 0, 0.3);
+}
+
+.card-elevated {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
+}
+
+/* Modern input styles */
 .input {
-  @apply min-h-[44px] px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+  @apply min-h-[48px] px-4 py-3 rounded-xl transition-all duration-200;
+  background: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+}
+
+.input::placeholder {
+  color: var(--color-text-muted);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
 }
 
 .input-number {
-  @apply text-center text-xl font-bold w-20;
+  @apply text-center text-xl font-bold w-24;
 }
 
-/* Progress indicators */
+/* Progress indicators with modern colors */
 .progress-up {
-  @apply text-green-500;
+  color: #22c55e;
 }
 
 .progress-same {
-  @apply text-yellow-500;
+  color: #fbbf24;
 }
 
 .progress-down {
-  @apply text-red-500;
+  color: #ef4444;
 }
 
-/* PR badge */
+/* Modern PR badge with gradient */
 .pr-badge {
-  @apply inline-flex items-center gap-1 px-2 py-1 bg-amber-500/20 text-amber-400 rounded-full text-sm font-medium;
+  @apply inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-semibold;
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%);
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.3);
 }
 
 /* Ghost/previous workout data */
 .ghost-data {
-  @apply text-slate-500 italic;
+  color: var(--color-text-muted);
+  font-style: italic;
 }
 
-/* Number stepper buttons */
+/* Modern stepper buttons */
 .stepper-btn {
-  @apply min-w-[44px] min-h-[44px] bg-slate-700 hover:bg-slate-600 rounded-lg flex items-center justify-center text-xl font-bold active:scale-95 transition-transform;
+  @apply min-w-[48px] min-h-[48px] rounded-xl flex items-center justify-center text-xl font-bold transition-all duration-200;
+  background: var(--color-bg-elevated);
+  border: 1px solid var(--color-border);
+}
+
+.stepper-btn:hover {
+  background: var(--color-bg-tertiary);
+  border-color: var(--color-border-light);
+}
+
+.stepper-btn:active {
+  transform: scale(0.95);
 }
 
 /* Animation for PR celebration */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0.4); }
-  50% { box-shadow: 0 0 20px 10px rgba(234, 179, 8, 0.2); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4); }
+  50% { box-shadow: 0 0 30px 15px rgba(251, 191, 36, 0.2); }
 }
 
 .pr-celebration {
   animation: pulse-glow 1s ease-in-out 3;
 }
 
-/* Scrollbar styling */
+/* Modern gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #3b82f6 0%, #d946ef 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Accent gradient text */
+.gradient-text-accent {
+  background: linear-gradient(135deg, #d946ef 0%, #f0abfc 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Modern scrollbar styling */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-slate-800;
+  background: var(--color-bg-secondary);
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-slate-600 rounded-full;
+  background: var(--color-border-light);
+  border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-slate-500;
+  background: #444444;
+}
+
+/* Glass morphism effect */
+.glass {
+  background: rgba(17, 17, 17, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border);
+}
+
+/* Utility classes for the new theme */
+.bg-primary { background: var(--color-bg-primary); }
+.bg-secondary { background: var(--color-bg-secondary); }
+.bg-tertiary { background: var(--color-bg-tertiary); }
+.bg-elevated { background: var(--color-bg-elevated); }
+
+.text-primary { color: var(--color-text-primary); }
+.text-secondary { color: var(--color-text-secondary); }
+.text-muted { color: var(--color-text-muted); }
+
+.border-default { border-color: var(--color-border); }
+.border-light { border-color: var(--color-border-light); }
+
+/* Modern section headers */
+.section-header {
+  @apply text-2xl font-bold tracking-tight;
+}
+
+.section-subheader {
+  @apply text-sm font-medium uppercase tracking-wider;
+  color: var(--color-text-muted);
+}
+
+/* Stat card styling */
+.stat-value {
+  @apply text-4xl font-bold;
+  background: linear-gradient(135deg, #ffffff 0%, #a1a1aa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Smooth page transitions */
+.page-transition {
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }

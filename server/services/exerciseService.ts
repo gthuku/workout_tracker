@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
-import { ForbiddenError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import cache, { CACHE_KEYS, CACHE_TTL } from '../utils/cache.js';
 import type { CreateExerciseInput } from '../schemas/index.js';
 
 interface DbExercise {
@@ -11,6 +11,12 @@ interface DbExercise {
   equipment: string;
   is_custom: number;
   user_id?: string;
+}
+
+// Generate cache key for exercise list with filters
+function getExerciseListCacheKey(userId: string, filters: { search?: string; muscleGroup?: string; equipment?: string }): string {
+  const filterStr = `${filters.search || ''}_${filters.muscleGroup || ''}_${filters.equipment || ''}`;
+  return `${CACHE_KEYS.EXERCISES(userId)}:${filterStr}`;
 }
 
 export const exerciseService = {
@@ -25,36 +31,44 @@ export const exerciseService = {
   },
 
   async list(userId: string, filters: { search?: string; muscleGroup?: string; equipment?: string }) {
-    let query = 'SELECT * FROM exercises WHERE (is_custom = 0 OR user_id = $1)';
-    const params: any[] = [userId];
-    let paramIndex = 2;
+    const cacheKey = getExerciseListCacheKey(userId, filters);
 
-    if (filters.search) {
-      query += ` AND name LIKE $${paramIndex}`;
-      params.push(`%${filters.search}%`);
-      paramIndex++;
-    }
+    return cache.wrap(
+      cacheKey,
+      async () => {
+        let query = 'SELECT * FROM exercises WHERE (is_custom = 0 OR user_id = $1)';
+        const params: unknown[] = [userId];
+        let paramIndex = 2;
 
-    if (filters.muscleGroup) {
-      query += ` AND primary_muscles LIKE $${paramIndex}`;
-      params.push(`%${filters.muscleGroup}%`);
-      paramIndex++;
-    }
+        if (filters.search) {
+          query += ` AND name LIKE $${paramIndex}`;
+          params.push(`%${filters.search}%`);
+          paramIndex++;
+        }
 
-    if (filters.equipment) {
-      query += ` AND equipment = $${paramIndex}`;
-      params.push(filters.equipment);
-      paramIndex++;
-    }
+        if (filters.muscleGroup) {
+          query += ` AND primary_muscles LIKE $${paramIndex}`;
+          params.push(`%${filters.muscleGroup}%`);
+          paramIndex++;
+        }
 
-    query += ' ORDER BY name';
+        if (filters.equipment) {
+          query += ` AND equipment = $${paramIndex}`;
+          params.push(filters.equipment);
+          paramIndex++;
+        }
 
-    const exercises = await db.query<DbExercise>(query, params);
-    return exercises.map((e) => ({
-      ...e,
-      primaryMuscles: JSON.parse(e.primary_muscles),
-      isCustom: e.is_custom,
-    }));
+        query += ' ORDER BY name';
+
+        const exercises = await db.query<DbExercise>(query, params);
+        return exercises.map((e) => ({
+          ...e,
+          primaryMuscles: JSON.parse(e.primary_muscles),
+          isCustom: e.is_custom,
+        }));
+      },
+      CACHE_TTL.EXERCISES // 24 hours - exercises rarely change
+    );
   },
 
   async create(userId: string, input: CreateExerciseInput) {
@@ -63,7 +77,7 @@ export const exerciseService = {
 
     await db.execute(
       `INSERT INTO exercises (id, name, primary_muscles, equipment, is_custom, user_id)
-       VALUES ($1, $2, $3, $4, true, $5)`,
+       VALUES ($1, $2, $3, $4, 1, $5)`,
       [id, name, JSON.stringify(primaryMuscles), equipment, userId]
     );
 
@@ -71,6 +85,9 @@ export const exerciseService = {
     if (!exercise) {
       throw new Error('Failed to create exercise');
     }
+
+    // Invalidate exercise list cache for this user
+    await cache.delPattern(`exercises:${userId}*`);
 
     logger.info({ exerciseId: id, userId, name }, 'Custom exercise created');
 
@@ -94,7 +111,7 @@ export const exerciseService = {
       [userId, exerciseId, startDate.toISOString().split('T')[0]]
     );
 
-    const grouped: Record<string, any> = {};
+    const grouped: Record<string, { date: string; sets: { setNumber: number; reps: number; weight: number }[]; totalVolume: number; maxWeight: number; totalReps: number }> = {};
     for (const row of sessions) {
       if (!grouped[row.workout_id]) {
         grouped[row.workout_id] = {
@@ -123,6 +140,7 @@ export const exerciseService = {
 
   async getPrevious(userId: string, exerciseId: string) {
     // Single query using subquery to get previous workout's sets (optimized from 2 queries)
+    // Note: SQLite uses positional ? params, so we need to pass userId/exerciseId twice for the subquery
     const results = await db.query<{ workout_date: string; id: string; workout_id: string; exercise_id: string; set_number: number; reps: number; weight: number; duration: number; created_at: string }>(
       `SELECT w.date as workout_date, ws.*
        FROM workout_sets ws
@@ -133,12 +151,12 @@ export const exerciseService = {
          AND w.id = (
            SELECT w2.id FROM workouts w2
            JOIN workout_sets ws2 ON w2.id = ws2.workout_id
-           WHERE w2.user_id = $1 AND ws2.exercise_id = $2 AND w2.is_complete = 1
+           WHERE w2.user_id = $3 AND ws2.exercise_id = $4 AND w2.is_complete = 1
            ORDER BY w2.date DESC
            LIMIT 1
          )
        ORDER BY ws.set_number`,
-      [userId, exerciseId]
+      [userId, exerciseId, userId, exerciseId]
     );
 
     if (results.length === 0) {

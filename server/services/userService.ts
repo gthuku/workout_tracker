@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
 import { NotFoundError, ConflictError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import cache, { CACHE_KEYS, CACHE_TTL } from '../utils/cache.js';
 import type { CreateProfileInput, UpdateProfileInput } from '../schemas/index.js';
 
 interface DbUser {
@@ -62,8 +63,9 @@ export const userService = {
          VALUES ($1, $2, 'lbs', $3)`,
         [id, username, displayName || username]
       );
-    } catch (error: any) {
-      if (error?.code === 'SQLITE_CONSTRAINT_UNIQUE' || error?.code === '23505') {
+    } catch (error) {
+      const dbError = error as { code?: string };
+      if (dbError?.code === 'SQLITE_CONSTRAINT_UNIQUE' || dbError?.code === '23505') {
         throw new ConflictError('Username already exists');
       }
       throw error;
@@ -95,16 +97,25 @@ export const userService = {
       await db.execute('DELETE FROM users WHERE id = $1', [profileId]);
     });
 
+    // Invalidate all user caches
+    await cache.invalidateUser(profileId);
+
     logger.info({ userId: profileId }, 'Profile deleted');
     return { success: true };
   },
 
   async getUser(userId: string) {
-    const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [userId]);
-    if (!user) {
-      throw new NotFoundError('User');
-    }
-    return formatUser(user);
+    return cache.wrap(
+      CACHE_KEYS.USER(userId),
+      async () => {
+        const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [userId]);
+        if (!user) {
+          throw new NotFoundError('User');
+        }
+        return formatUser(user);
+      },
+      CACHE_TTL.MEDIUM
+    );
   },
 
   async updateUser(userId: string, preferredUnit: string) {
@@ -113,6 +124,10 @@ export const userService = {
     if (!user) {
       throw new NotFoundError('User');
     }
+
+    // Invalidate user cache
+    await cache.del(CACHE_KEYS.USER(userId));
+
     logger.info({ userId }, 'User updated');
     return formatUser(user);
   },
@@ -166,6 +181,9 @@ export const userService = {
     if (!user) {
       throw new NotFoundError('User');
     }
+
+    // Invalidate user cache
+    await cache.del(CACHE_KEYS.USER(userId));
 
     logger.info({ userId }, 'Profile updated');
     return formatUser(user);
