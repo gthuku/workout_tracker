@@ -58,7 +58,12 @@ A comprehensive full-stack workout tracking application built with modern web te
 | **TypeScript** | Server-side type safety |
 | **SQLite** | Embedded database for local development |
 | **Better SQLite3** | High-performance SQLite driver with WAL support |
+| **Redis** | Keep frequently accessed data in memory (via `ioredis`) |
+| **Zod** | TypeScript-first schema validation |
 | **bcrypt** | Password hashing for authentication |
+| **Pino** | Fast, low-overhead logger |
+| **Helmet** | Security headers middleware |
+| **Rate Limit** | Rate limiting for API protection |
 | **CORS** | Cross-origin resource sharing middleware |
 | **UUID** | Unique identifier generation |
 
@@ -72,16 +77,17 @@ A comprehensive full-stack workout tracking application built with modern web te
 
 ### **Database Architecture**
 - **SQLite** with WAL mode for concurrent read/write operations
+- **Redis Caching** for high-performance data retrieval
 - **Transaction-based operations** for data integrity
 - **Foreign key constraints** with CASCADE deletes
-- **Indexed queries** for optimal performance
-- **Automatic schema migrations** on startup
+- **Automatic schema migrations** via custom migration runner
 
 ## 📋 Prerequisites
 
 ### **Required**
-- **Node.js 18+** - JavaScript runtime environment
-- **SQLite** - Included automatically (no separate installation needed)
+- **Node.js 20+** - JavaScript runtime environment
+- **Redis** - For caching layer (optional for dev, but recommended)
+- **SQLite** - Included automatically
 
 ## Getting Started
 
@@ -104,8 +110,9 @@ npm install
 Override default settings with environment variables:
 
 ```bash
-# Database (defaults to ./workout.db)
-export DATABASE_PATH=/path/to/custom/workout.db
+# Database & Cache
+export DATABASE_PATH=./workout.db
+export REDIS_URL=redis://localhost:6379
 
 # Server
 export PORT=3001
@@ -127,67 +134,55 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 |---------|-------------|
 | `npm run dev` | Start both frontend (port 5173) and backend (port 3001) concurrently |
 | `npm run dev:client` | Start frontend only (Vite dev server) |
-| `npm run dev:server` | Start backend only (Express with tsx watch) |
+| `npm run dev:server` | Start backend only (Express with watch) |
+
+### **Database**
+| Command | Description |
+|---------|-------------|
+| `npm run migrate` | Run pending migrations |
+| `npm run migrate:status` | Check migration status |
+| `npm run migrate:create` | Create a new migration file |
+| `npm run migrate:rollback` | Rollback last batch of migrations |
 
 ### **Production**
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Production build (TypeScript compilation + Vite build) |
+| `npm run build` | Full production build (Client + Server) |
 | `npm run build:server` | Build server TypeScript only |
 | `npm run build:client` | Build client (React) only |
-| `npm start` | Start production server from built files |
+| `npm start` | Start production server |
 | `npm run preview` | Preview production build locally |
 
 ### **Quality & Maintenance**
 | Command | Description |
 |---------|-------------|
 | `npm run lint` | Run ESLint for code quality checks |
+| `npm run typecheck` | Run TypeScript type checking |
 
 ## 📁 Project Structure
 
 ```
 ├── 📁 src/                          # Frontend React Application
-│   ├── 📁 api/
-│   │   └── client.ts                # Typed API client with fetch utilities
+│   ├── 📁 api/                      # Typed API client
 │   ├── 📁 components/               # Reusable UI components
-│   │   ├── ExerciseSelector.tsx     # Exercise selection with search/filter
-│   │   ├── ProfileSelector.tsx      # User profile switching
-│   │   ├── Layout.tsx               # Main app layout with navigation
-│   │   └── ProgressIndicator.tsx    # Loading and progress indicators
-│   ├── 📁 constants/
-│   │   └── workout.ts               # Application constants and limits
-│   ├── 📁 hooks/                    # Custom React hooks
-│   ├── 📁 pages/                    # Route components (pages)
-│   │   ├── Dashboard.tsx            # Main dashboard with stats
-│   │   ├── ActiveWorkout.tsx        # Real-time workout logging
-│   │   ├── LogPastWorkout.tsx       # Historical workout entry
-│   │   ├── ExerciseLibrary.tsx      # Browse and search exercises
-│   │   ├── ExerciseHistory.tsx      # Individual exercise progress
-│   │   ├── WorkoutHistory.tsx       # Workout session history
-│   │   ├── WorkoutDetail.tsx        # Detailed view of a single workout
-│   │   ├── Stats.tsx                # Detailed analytics and charts
-│   │   └── Profile.tsx              # User profile management (with avatar)
-│   ├── 📁 store/
-│   │   └── workoutStore.ts          # Zustand state management
-│   ├── 📁 types/
-│   │   └── index.ts                 # TypeScript type definitions
-│   ├── App.tsx                      # Main app component
-│   ├── main.tsx                     # React entry point
-│   └── index.css                    # Global styles and Tailwind imports
+│   ├── 📁 pages/                    # Route components
+│   ├── 📁 store/                    # Zustand state management
+│   ├── 📁 types/                    # Shared TypeScript types
+│   └── index.css                    # Tailwind imports
 │
 ├── 📁 server/                       # Backend Express Application
-│   ├── index.ts                     # Express server setup and API routes
-│   ├── database.ts                  # SQLite database configuration and helpers
-│   └── seed.ts                      # Database seeding with exercise data
+│   ├── 📁 middleware/               # Express middleware (auth, error, logging)
+│   ├── 📁 migrations/               # Database migration scripts
+│   ├── 📁 schemas/                  # Zod validation schemas
+│   ├── 📁 services/                 # Business logic layer
+│   ├── 📁 utils/                    # Utilities (cache, logger)
+│   ├── index.ts                     # Entry point
+│   └── database.ts                  # Database configuration
 │
-├── 📄 package.json                  # Project dependencies and scripts
-├── 📄 tsconfig.json                 # TypeScript configuration
-├── 📄 vite.config.ts                # Vite build configuration
-├── 📄 tailwind.config.js            # Tailwind CSS configuration
-├── 📄 eslint.config.js              # ESLint configuration
-├── 📄 README.md                     # Project documentation
-├── 📄 workout.db                    # SQLite database file (auto-generated)
-└── 📄 dist/                         # Production build output (generated)
+├── 📄 package.json                  # Dependencies and scripts
+├── 📄 tsconfig.json                 # Shared TypeScript config
+├── 📄 workout.db                    # SQLite database
+└── 📄 dist/                         # Production build output
 ```
 
 ## 🔗 API Endpoints
@@ -319,7 +314,7 @@ NODE_ENV=production
 
 ### **Data Flow**
 ```
-User Action → React Component → Zustand Store → API Client → Express Route → Database Transaction → Response → UI Update
+User Action → React Component → Zustand Store → API Client → Express Route → Zod Validation → Service Layer → Database Transaction → Response → UI Update
 ```
 
 ### **Key Design Decisions**
@@ -373,7 +368,3 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Icons** provided by Lucide React
 - **Charts** powered by Recharts
 - **UI components** built with Tailwind CSS
-
----
-
-**Built with ❤️ for the fitness community**
