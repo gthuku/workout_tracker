@@ -111,8 +111,18 @@ export const exerciseService = {
       [userId, exerciseId, startDate.toISOString().split('T')[0]]
     );
 
+    interface SessionRow {
+      workout_id: string;
+      date: string;
+      set_number: number;
+      reps: number;
+      weight: number;
+    }
+
+    const typedSessions = sessions as unknown as SessionRow[];
+
     const grouped: Record<string, { date: string; sets: { setNumber: number; reps: number; weight: number }[]; totalVolume: number; maxWeight: number; totalReps: number }> = {};
-    for (const row of sessions) {
+    for (const row of typedSessions) {
       if (!grouped[row.workout_id]) {
         grouped[row.workout_id] = {
           date: row.date,

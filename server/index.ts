@@ -216,7 +216,7 @@ v1Router.post('/profiles', asyncHandler(async (req, res) => {
 }));
 
 v1Router.delete('/profiles/:id', requireAuth, asyncHandler(async (req, res) => {
-  const result = await userService.deleteProfile(req.params.id, getUserId(req));
+  const result = await userService.deleteProfile(req.params.id as string, getUserId(req));
   res.json(result);
 }));
 
@@ -301,18 +301,18 @@ v1Router.post('/exercises', requireAuth, asyncHandler(async (req, res) => {
 
 v1Router.get('/exercises/:exerciseId/history', requireAuth, asyncHandler(async (req, res) => {
   const { weeks } = HistoryQuerySchema.parse(req.query);
-  const history = await exerciseService.getHistory(getUserId(req), req.params.exerciseId, weeks);
+  const history = await exerciseService.getHistory(getUserId(req), req.params.exerciseId as string, weeks);
   res.json(history);
 }));
 
 v1Router.get('/exercises/:exerciseId/previous', requireAuth, asyncHandler(async (req, res) => {
-  const previous = await exerciseService.getPrevious(getUserId(req), req.params.exerciseId);
+  const previous = await exerciseService.getPrevious(getUserId(req), req.params.exerciseId as string);
   res.json(previous);
 }));
 
 v1Router.get('/exercises/:exerciseId/pr-trends', requireAuth, asyncHandler(async (req, res) => {
   const { type, weeks } = PRTrendsQuerySchema.parse(req.query);
-  const trends = await statsService.getPRTrends(getUserId(req), req.params.exerciseId, type, weeks);
+  const trends = await statsService.getPRTrends(getUserId(req), req.params.exerciseId as string, type, weeks);
   res.json(trends);
 }));
 
@@ -335,13 +335,13 @@ v1Router.post('/workouts', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 v1Router.get('/workouts/:id', requireAuth, asyncHandler(async (req, res) => {
-  const workout = await workoutService.getById(req.params.id, getUserId(req));
+  const workout = await workoutService.getById(req.params.id as string, getUserId(req));
   res.json(workout);
 }));
 
 v1Router.patch('/workouts/:id', requireAuth, asyncHandler(async (req, res) => {
   const input = UpdateWorkoutSchema.parse(req.body);
-  const workout = await workoutService.update(req.params.id, getUserId(req), input);
+  const workout = await workoutService.update(req.params.id as string, getUserId(req), input);
   res.json(workout);
 }));
 
@@ -356,25 +356,25 @@ v1Router.delete('/workouts/incomplete', requireAuth, asyncHandler(async (req, re
 }));
 
 v1Router.delete('/workouts/:id', requireAuth, asyncHandler(async (req, res) => {
-  const result = await workoutService.delete(req.params.id, getUserId(req));
+  const result = await workoutService.delete(req.params.id as string, getUserId(req));
   res.json(result);
 }));
 
 // --- Workout Sets ---
 v1Router.post('/workouts/:workoutId/sets', requireAuth, asyncHandler(async (req, res) => {
   const input = CreateSetSchema.parse(req.body);
-  const set = await workoutService.createSet(req.params.workoutId, getUserId(req), input);
+  const set = await workoutService.createSet(req.params.workoutId as string, getUserId(req), input);
   res.json(set);
 }));
 
 v1Router.patch('/sets/:id', requireAuth, asyncHandler(async (req, res) => {
   const input = UpdateSetSchema.parse(req.body);
-  const set = await workoutService.updateSet(req.params.id, getUserId(req), input);
+  const set = await workoutService.updateSet(req.params.id as string, getUserId(req), input);
   res.json(set);
 }));
 
 v1Router.delete('/sets/:id', requireAuth, asyncHandler(async (req, res) => {
-  const result = await workoutService.deleteSet(req.params.id, getUserId(req));
+  const result = await workoutService.deleteSet(req.params.id as string, getUserId(req));
   res.json(result);
 }));
 
