@@ -350,7 +350,7 @@ const eip = new aws.ec2.Eip(resourceName("eip"), {
 // =============================================================================
 
 const frontendBucket = new aws.s3.Bucket(resourceName("frontend"), {
-  bucket: `${resourceName("frontend")}-${Date.now()}`,
+  bucket: resourceName("frontend"),
   tags: {
     Name: resourceName("frontend"),
     Environment: environment,
