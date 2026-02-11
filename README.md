@@ -96,10 +96,8 @@ A comprehensive full-stack workout tracking application built with modern web te
 
 ### **Required**
 - **Node.js 20+** - JavaScript runtime environment
-
-### **Optional**
-- **Redis** - Caching layer for improved performance (app works without it)
-- **Docker** - For containerized deployment
+- **Redis** - For caching layer (optional for dev, but recommended)
+- **SQLite** - Included automatically
 
 ## Getting Started
 
@@ -122,12 +120,9 @@ npm install
 Override default settings with environment variables:
 
 ```bash
-# Database
+# Database & Cache
 export DATABASE_PATH=./workout.db
-
-# Redis Cache (optional - app works without it)
 export REDIS_URL=redis://localhost:6379
-export CACHE_ENABLED=true  # Set to false to disable caching
 
 # Server
 export PORT=3001
@@ -193,7 +188,6 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── 📁 pages/                    # Route components
 │   ├── 📁 store/                    # Zustand state management
 │   ├── 📁 types/                    # Shared TypeScript types
-│   ├── 📁 test/                     # Frontend tests
 │   └── index.css                    # Tailwind imports
 │
 ├── 📁 server/                       # Backend Express Application
@@ -202,22 +196,11 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── 📁 schemas/                  # Zod validation schemas
 │   ├── 📁 services/                 # Business logic layer
 │   ├── 📁 utils/                    # Utilities (cache, logger)
-│   ├── 📁 test/                     # Backend tests
 │   ├── index.ts                     # Entry point
 │   └── database.ts                  # Database configuration
 │
-├── 📁 infrastructure/               # Pulumi AWS Infrastructure
-│   └── index.ts                     # EC2, S3, CloudFront resources
-│
-├── 📁 .github/workflows/            # CI/CD Pipelines
-│   └── ci.yml                       # Lint, test, build, security
-│
-├── 📄 Dockerfile                    # Container build
-├── 📄 docker-compose.yml            # Local container orchestration
 ├── 📄 package.json                  # Dependencies and scripts
 ├── 📄 tsconfig.json                 # Shared TypeScript config
-├── 📄 vitest.config.ts              # Frontend test config
-├── 📄 vitest.config.server.ts       # Backend test config
 ├── 📄 workout.db                    # SQLite database
 └── 📄 dist/                         # Production build output
 ```
