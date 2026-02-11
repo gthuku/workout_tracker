@@ -82,7 +82,11 @@ export function errorHandler(
 
   // Handle unexpected errors
   logger.error(logContext, 'Unexpected error');
-  res.status(500).json({ error: 'Internal server error' });
+  const isDev = process.env.NODE_ENV !== 'production';
+  res.status(500).json({
+    error: 'Internal server error',
+    ...(isDev && { message: err.message, stack: err.stack })
+  });
 }
 
 // Async handler wrapper to catch async errors

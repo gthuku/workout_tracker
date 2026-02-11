@@ -89,7 +89,16 @@ export const statsService = {
           streak,
           weeklyWorkoutCount: parseInt(weeklyCountResult?.count || '0'),
           recentWorkouts: recentWorkouts.map((w) => ({ ...w, isComplete: true })),
-          recentPRs: recentPRs.map((pr) => ({ ...pr, exerciseName: pr.exercise_name })),
+          recentPRs: recentPRs.map((pr) => ({
+            id: pr.id,
+            userId: pr.user_id,
+            exerciseId: pr.exercise_id,
+            type: pr.type as 'max_weight' | 'max_volume' | 'max_reps',
+            value: pr.value,
+            workoutId: pr.workout_id,
+            achievedAt: pr.achieved_at,
+            exerciseName: pr.exercise_name
+          })),
           weeklyMuscleGroups: muscleGroupVolumes,
         };
       },
@@ -115,8 +124,8 @@ export const statsService = {
        JOIN exercises e ON ws.exercise_id = e.id
        WHERE w.user_id = $1 AND w.is_complete = 1 AND w.date >= $2
        GROUP BY e.primary_muscles`,
-      [userId, startDate.toISOString().split('T')[0]]
-    );
+          [userId, startDate.toISOString().split('T')[0]]
+        );
 
         const muscleGroupVolumes = this.calculateMuscleGroupVolumes(data);
         const imbalances = this.checkImbalances(muscleGroupVolumes);
@@ -145,8 +154,14 @@ export const statsService = {
         );
 
         return prs.map((pr) => ({
-          ...pr,
-          exerciseName: pr.exercise_name,
+          id: pr.id,
+          userId: pr.user_id,
+          exerciseId: pr.exercise_id,
+          type: pr.type as 'max_weight' | 'max_volume' | 'max_reps',
+          value: pr.value,
+          workoutId: pr.workout_id,
+          achievedAt: pr.achieved_at,
+          exerciseName: pr.exercise_name
         }));
       },
       CACHE_TTL.MEDIUM

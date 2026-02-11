@@ -139,7 +139,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
     setSubmitting(true);
     setError('');
     try {
-      await authApi.setPassword(pendingUser.id, password);
+      await authApi.setPassword(password);
       localStorage.setItem('selectedProfileId', pendingUser.id);
       onProfileSelected(pendingUser.id);
     } catch (err) {

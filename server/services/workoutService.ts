@@ -186,7 +186,7 @@ export const workoutService = {
       throw new ForbiddenError('Access denied');
     }
 
-    const { name, notes, isComplete, duration } = input;
+    const { name, date, notes, isComplete, duration } = input;
     const updates: string[] = [];
     const params: unknown[] = [];
     let paramIndex = 1;
@@ -194,6 +194,11 @@ export const workoutService = {
     if (name !== undefined) {
       updates.push(`name = $${paramIndex}`);
       params.push(name);
+      paramIndex++;
+    }
+    if (date !== undefined) {
+      updates.push(`date = $${paramIndex}`);
+      params.push(date);
       paramIndex++;
     }
     if (notes !== undefined) {
@@ -245,6 +250,8 @@ export const workoutService = {
     }
 
     await db.withTransaction(async () => {
+      // Manually delete dependencies because ON DELETE CASCADE might be missing in older DBs
+      await db.execute('DELETE FROM personal_records WHERE workout_id = $1', [workoutId]);
       await db.execute('DELETE FROM workout_sets WHERE workout_id = $1', [workoutId]);
       await db.execute('DELETE FROM workouts WHERE id = $1', [workoutId]);
     });

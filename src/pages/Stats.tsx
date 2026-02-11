@@ -63,21 +63,19 @@ export function Stats() {
           <div className="flex gap-1 bg-slate-800 rounded-lg p-1">
             <button
               onClick={() => setPeriod('week')}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                period === 'week'
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${period === 'week'
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-400 hover:text-white'
-              }`}
+                }`}
             >
               Week
             </button>
             <button
               onClick={() => setPeriod('month')}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${
-                period === 'month'
+              className={`px-3 py-1.5 rounded text-sm font-medium transition-colors ${period === 'month'
                   ? 'bg-blue-600 text-white'
                   : 'text-slate-400 hover:text-white'
-              }`}
+                }`}
             >
               Month
             </button>
@@ -112,7 +110,7 @@ export function Stats() {
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={muscleGroups}
+                      data={muscleGroups as unknown as Record<string, unknown>[]}
                       dataKey="percentage"
                       nameKey="muscleGroup"
                       cx="50%"

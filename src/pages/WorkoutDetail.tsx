@@ -19,6 +19,10 @@ export function WorkoutDetail() {
   const [loading, setLoading] = useState(true);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
+  const [isEditingDate, setIsEditingDate] = useState(false);
+  const [editedDate, setEditedDate] = useState('');
+  const [isEditingDuration, setIsEditingDuration] = useState(false);
+  const [editedDuration, setEditedDuration] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingSetId, setEditingSetId] = useState<string | null>(null);
   const [addingSetToExercise, setAddingSetToExercise] = useState<string | null>(null);
@@ -54,6 +58,36 @@ export function WorkoutDetail() {
       setIsEditingName(false);
     } catch (error) {
       console.error('Failed to rename workout:', error);
+    }
+  };
+
+  const handleSaveDate = async () => {
+    if (!workout || !editedDate) {
+      setIsEditingDate(false);
+      return;
+    }
+
+    try {
+      await workoutApi.update(workout.id, { date: editedDate });
+      setWorkout({ ...workout, date: editedDate });
+      setIsEditingDate(false);
+    } catch (error) {
+      console.error('Failed to update workout date:', error);
+    }
+  };
+
+  const handleSaveDuration = async () => {
+    if (!workout) {
+      setIsEditingDuration(false);
+      return;
+    }
+
+    try {
+      await workoutApi.update(workout.id, { duration: editedDuration });
+      setWorkout({ ...workout, duration: editedDuration });
+      setIsEditingDuration(false);
+    } catch (error) {
+      console.error('Failed to update workout duration:', error);
     }
   };
 
@@ -267,14 +301,70 @@ export function WorkoutDetail() {
 
           {/* Date and Duration */}
           <div className="flex items-center justify-center gap-4 mt-2 text-sm text-slate-400">
-            <div className="flex items-center gap-1.5">
-              <Calendar size={14} />
-              <span>{format(parseISO(workout.date), 'EEEE, MMM d, yyyy')}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <Clock size={14} />
-              <span className="font-mono">{formatDuration(workout.duration)}</span>
-            </div>
+            {isEditingDate ? (
+              <div className="flex items-center gap-2">
+                <Calendar size={14} />
+                <input
+                  type="date"
+                  value={editedDate}
+                  onChange={(e) => setEditedDate(e.target.value)}
+                  className="input py-1 px-2 text-sm"
+                  autoFocus
+                />
+                <button onClick={handleSaveDate} className="p-1 text-green-500">
+                  <Check size={16} />
+                </button>
+                <button onClick={() => setIsEditingDate(false)} className="p-1 text-slate-400">
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setEditedDate(workout.date);
+                  setIsEditingDate(true);
+                }}
+                className="flex items-center gap-1.5 hover:bg-slate-800 rounded px-2 py-1 transition-colors"
+              >
+                <Calendar size={14} />
+                <span>{format(parseISO(workout.date), 'EEEE, MMM d, yyyy')}</span>
+                <Edit2 size={12} className="text-slate-500" />
+              </button>
+            )}
+            {isEditingDuration ? (
+              <div className="flex items-center gap-2">
+                <Clock size={14} />
+                <input
+                  type="number"
+                  value={editedDuration}
+                  onChange={(e) => setEditedDuration(Math.max(0, Number(e.target.value) || 0))}
+                  className="input py-1 px-2 text-sm w-20 font-mono text-center"
+                  placeholder="mins"
+                  autoFocus
+                  min="0"
+                  max="600"
+                />
+                <span className="text-xs">min</span>
+                <button onClick={handleSaveDuration} className="p-1 text-green-500">
+                  <Check size={16} />
+                </button>
+                <button onClick={() => setIsEditingDuration(false)} className="p-1 text-slate-400">
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setEditedDuration(workout.duration || 0);
+                  setIsEditingDuration(true);
+                }}
+                className="flex items-center gap-1.5 hover:bg-slate-800 rounded px-2 py-1 transition-colors"
+              >
+                <Clock size={14} />
+                <span className="font-mono">{formatDuration(workout.duration)}</span>
+                <Edit2 size={12} className="text-slate-500" />
+              </button>
+            )}
           </div>
         </div>
       </header>

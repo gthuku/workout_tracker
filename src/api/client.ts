@@ -125,10 +125,11 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
       // Ignore JSON parse errors
     }
 
-    // Handle 401 Unauthorized - clear auth and redirect could be handled here
+    // Handle 401 Unauthorized - clear invalid auth
     if (response.status === 401) {
-      // Optionally clear auth on 401
-      // clearAuth();
+      clearAuth();
+      // Don't redirect here - let the calling component handle it
+      // This prevents blank screen issues during redirect
     }
 
     throw new Error(errorMessage);
@@ -290,6 +291,8 @@ export const exerciseApi = {
     fetchJson<ExerciseHistory>(`/api/exercises/${exerciseId}/history?weeks=${weeks}`),
   getPrevious: (exerciseId: string) =>
     fetchJson<{ date?: string; sets: WorkoutSet[] }>(`/api/exercises/${exerciseId}/previous`),
+  delete: (exerciseId: string) =>
+    fetchJson<{ success: boolean }>(`/api/exercises/${exerciseId}`, { method: 'DELETE' }),
 };
 
 // Workout API
@@ -339,7 +342,7 @@ export const setApi = {
 // Personal Records API
 export const prApi = {
   list: (limit = 5) =>
-    fetchJson<(PersonalRecord & { exerciseName: string })[]>(`/personal-records?limit=${limit}`),
+    fetchJson<(PersonalRecord & { exerciseName: string })[]>(`/api/personal-records?limit=${limit}`),
   getTrends: (exerciseId: string, type: PRTrendType = 'max_weight', weeks = 52) =>
     fetchJson<PRTrends>(`/api/exercises/${exerciseId}/pr-trends?type=${type}&weeks=${weeks}`),
 };

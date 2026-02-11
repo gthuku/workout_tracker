@@ -84,11 +84,11 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
             createdAt: setData.created_at,
           });
           exerciseMap.set(exerciseId, existing);
-           exerciseInfo.set(exerciseId, {
-             name: setData.exercise_name || '',
-             primaryMuscles: setData.primaryMuscles || [],
-             equipment: setData.equipment || 'Barbell',
-           });
+          exerciseInfo.set(exerciseId, {
+            name: setData.exercise_name || '',
+            primaryMuscles: setData.primaryMuscles || [],
+            equipment: setData.equipment || 'Barbell',
+          });
         }
 
         // Build workout exercises array
@@ -121,7 +121,10 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
             createdAt: workout.createdAt || workout.created_at,
           },
           workoutExercises,
-          workoutStartTime: new Date(workout.createdAt || workout.created_at),
+          // Ensure timestamp is treated as UTC if it comes from SQLite (no Z)
+          workoutStartTime: new Date((workout.createdAt || workout.created_at).endsWith('Z')
+            ? (workout.createdAt || workout.created_at)
+            : (workout.createdAt || workout.created_at).replace(' ', 'T') + 'Z'),
           isLoading: false,
         });
       } else {
@@ -224,13 +227,13 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
 
       // Return PR status from server response (if available) or client calculation
       const isNewPR = (rawSet as { isPR?: boolean }).isPR || false;
-      
+
       return { isNewPR };
     } catch (error) {
       // Rollback to previous state on error
-      set({ 
+      set({
         workoutExercises: previousWorkoutExercises,
-        error: (error as Error).message 
+        error: (error as Error).message
       });
       return { isNewPR: false };
     }
