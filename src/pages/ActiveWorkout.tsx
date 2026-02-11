@@ -1,9 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Check, X, ChevronLeft, Save, Trash2, Trophy, Clock, Edit2 } from 'lucide-react';
+import { Plus, Check, X, ChevronLeft, Save, Trash2, Trophy, Clock, Edit2, Timer } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useWorkoutStore } from '../store/workoutStore';
 import { ExerciseSelector } from '../components/ExerciseSelector';
+import { RestTimer } from '../components/RestTimer';
 import type { WorkoutSet, Equipment, MuscleGroup } from '../types';
 import { WORKOUT_LIMITS } from '../constants/workout';
 
@@ -21,6 +22,7 @@ export function ActiveWorkout() {
     discardWorkout,
     updateWorkoutName,
     updateWorkoutTimer,
+    error,
   } = useWorkoutStore();
 
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
@@ -28,6 +30,8 @@ export function ActiveWorkout() {
   const [notes, setNotes] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
+  const [showRestTimer, setShowRestTimer] = useState(false);
+  const [restTimerDuration, setRestTimerDuration] = useState(90);
   // Timer state is now managed in the store for persistence across page navigation
 
   // Generate auto workout name based on day, time, and muscles
@@ -81,8 +85,13 @@ export function ActiveWorkout() {
 
   const handleComplete = async () => {
     const finalName = activeWorkout?.name || generateWorkoutName();
-    await completeWorkout(notes, finalName, Math.floor(elapsedSeconds / 60));
-    navigate('/');
+    // Ensure duration is at least 1 minute to pass validation
+    const duration = Math.max(1, Math.floor(elapsedSeconds / 60));
+    await completeWorkout(notes, finalName, duration);
+    // Only navigate if no error
+    if (!useWorkoutStore.getState().error) {
+      navigate('/');
+    }
   };
 
   const handleDiscard = async () => {
@@ -189,6 +198,14 @@ export function ActiveWorkout() {
       </header>
 
       <div className="p-4 max-w-lg mx-auto space-y-4">
+        {/* Error Alert */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm flex items-start gap-2">
+            <div className="mt-0.5">⚠️</div>
+            <span>{error}</span>
+          </div>
+        )}
+
         {/* Add Exercise Button - at top */}
         <button
           onClick={() => setShowExerciseSelector(true)}
@@ -212,9 +229,15 @@ export function ActiveWorkout() {
               if (isNewPR) {
                 triggerPRCelebration();
               }
+              // Auto-start rest timer after logging a set
+              setShowRestTimer(true);
             }}
             onUpdateSet={updateSet}
             onDeleteSet={deleteSet}
+            onStartRestTimer={(seconds) => {
+              setRestTimerDuration(seconds);
+              setShowRestTimer(true);
+            }}
           />
         ))}
 
@@ -231,6 +254,13 @@ export function ActiveWorkout() {
       {showExerciseSelector && (
         <ExerciseSelector onClose={() => setShowExerciseSelector(false)} />
       )}
+
+      {/* Rest Timer Modal */}
+      <RestTimer
+        isVisible={showRestTimer}
+        onClose={() => setShowRestTimer(false)}
+        defaultSeconds={restTimerDuration}
+      />
 
       {/* Complete Workout Modal */}
       {showCompleteModal && (
@@ -309,6 +339,7 @@ interface ExerciseCardProps {
   onAddSet: (reps: number, weight: number, duration?: number) => void;
   onUpdateSet: (setId: string, reps: number, weight: number, duration?: number) => void;
   onDeleteSet: (setId: string) => void;
+  onStartRestTimer: (seconds: number) => void;
 }
 
 function ExerciseCard({
@@ -320,6 +351,7 @@ function ExerciseCard({
   onAddSet,
   onUpdateSet,
   onDeleteSet,
+  onStartRestTimer,
 }: ExerciseCardProps) {
   const isCardio = equipment === 'Cardio';
 
@@ -341,6 +373,10 @@ function ExerciseCard({
     } else {
       onAddSet(reps, weight);
     }
+    // Default rest timer for strength sets (90s)
+    if (!isCardio) {
+      onStartRestTimer(90);
+    }
   };
 
   const matchesPrevious = (set: WorkoutSet, index: number) => {
@@ -360,17 +396,27 @@ function ExerciseCard({
           <h3 className="font-bold text-lg">{exerciseName}</h3>
           <p className="text-sm text-blue-400">{muscleGroups.join(', ')}</p>
         </div>
-        {previousSets.length > 0 && (
-           <div className="text-right text-xs text-slate-500">
-             <p>Previous best</p>
-             <p className="font-medium text-slate-400">
-               {isCardio
-                 ? `${Math.max(...previousSets.map(s => s.duration || 0))} min`
-                 : `${Math.max(...previousSets.map(s => s.weight || 0))} lbs`
-               }
-             </p>
-           </div>
-         )}
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={() => onStartRestTimer(90)}
+            className="text-xs flex items-center gap-1 bg-slate-700 hover:bg-slate-600 px-2 py-1 rounded text-slate-300 transition-colors"
+          >
+            <Timer size={14} />
+            Rest
+          </button>
+
+          {previousSets.length > 0 && (
+            <div className="text-right text-xs text-slate-500">
+              <span className="block mb-0.5">Previous best</span>
+              <span className="font-medium text-slate-400">
+                {isCardio
+                  ? `${Math.max(...previousSets.map(s => s.duration || 0))} min`
+                  : `${Math.max(...previousSets.map(s => s.weight || 0))} lbs`
+                }
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Set Input - Improved Layout with Dropdowns */}
@@ -503,13 +549,12 @@ function ExerciseCard({
               <div
                 key={set.id}
                 onClick={() => !isCardio && setEditingSet(set.id)}
-                className={`flex items-center justify-between p-3 rounded-lg transition-colors ${
-                  isCardio
-                    ? 'bg-slate-700/50'
-                    : matched === true
-                      ? 'bg-green-500/10 border border-green-500/30'
-                      : 'bg-slate-700/50 hover:bg-slate-700 cursor-pointer'
-                }`}
+                className={`flex items-center justify-between p-3 rounded-lg transition-colors ${isCardio
+                  ? 'bg-slate-700/50'
+                  : matched === true
+                    ? 'bg-green-500/10 border border-green-500/30'
+                    : 'bg-slate-700/50 hover:bg-slate-700 cursor-pointer'
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <span className="w-8 h-8 bg-slate-600 rounded-full flex items-center justify-center text-sm font-bold">
@@ -531,11 +576,11 @@ function ExerciseCard({
                       ? (set.duration || 0) > (previousSets[index]?.duration || 0)
                       : (set.weight || 0) > (previousSets[index]?.weight || 0)
                   ) && (
-                    <span className="pr-badge">
-                      <Trophy size={12} />
-                      PR
-                    </span>
-                  )}
+                      <span className="pr-badge">
+                        <Trophy size={12} />
+                        PR
+                      </span>
+                    )}
                 </div>
               </div>
             );
@@ -565,13 +610,12 @@ function ExerciseCard({
             {totalVolume.toLocaleString()} lbs
             {previousVolume > 0 && (
               <span
-                className={`ml-2 ${
-                  totalVolume > previousVolume
-                    ? 'text-green-500'
-                    : totalVolume < previousVolume
+                className={`ml-2 ${totalVolume > previousVolume
+                  ? 'text-green-500'
+                  : totalVolume < previousVolume
                     ? 'text-red-500'
                     : 'text-yellow-500'
-                }`}
+                  }`}
               >
                 ({totalVolume >= previousVolume ? '+' : ''}
                 {Math.round(((totalVolume - previousVolume) / previousVolume) * 100)}%)

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList, Sparkles } from 'lucide-react';
+import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
 import { dashboardApi } from '../api/client';
 import type { DashboardData } from '../types';
@@ -153,13 +153,21 @@ export function Dashboard() {
       {/* Recent PRs */}
       {data?.recentPRs && data.recentPRs.length > 0 && (
         <div className="card">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="p-2 bg-gradient-to-br from-amber-500/20 to-yellow-500/20 rounded-lg">
-              <Trophy className="text-amber-500" size={18} />
+          <button
+            onClick={() => navigate('/recent-prs')}
+            className="flex items-center justify-between w-full mb-4 group"
+          >
+            <div className="flex items-center gap-2">
+              <div className="p-2 bg-gradient-to-br from-amber-500/20 to-yellow-500/20 rounded-lg">
+                <Trophy className="text-amber-500" size={18} />
+              </div>
+              <h2 className="font-semibold">Recent PRs</h2>
             </div>
-            <h2 className="font-semibold">Recent PRs</h2>
-            <Sparkles size={14} className="text-amber-500 ml-auto" />
-          </div>
+            <div className="flex items-center gap-1 text-amber-500 group-hover:text-amber-400 transition-colors">
+              <span className="text-sm font-medium">View all</span>
+              <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+            </div>
+          </button>
           <div className="space-y-1">
             {data.recentPRs.slice(0, 3).map((pr) => (
               <div

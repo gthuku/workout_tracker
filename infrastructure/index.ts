@@ -183,6 +183,71 @@ const logGroup = new aws.cloudwatch.LogGroup(resourceName("logs"), {
 });
 
 // =============================================================================
+// S3 Bucket for Database Backups
+// =============================================================================
+
+const backupBucket = new aws.s3.Bucket(resourceName("backups"), {
+  bucket: resourceName("backups"),
+  tags: {
+    Name: resourceName("backups"),
+    Environment: environment,
+  },
+});
+
+// Block public access for backup bucket
+new aws.s3.BucketPublicAccessBlock(resourceName("backups-public-access-block"), {
+  bucket: backupBucket.id,
+  blockPublicAcls: true,
+  blockPublicPolicy: true,
+  ignorePublicAcls: true,
+  restrictPublicBuckets: true,
+});
+
+// Lifecycle rule: Keep daily backups for 30 days, then delete
+new aws.s3.BucketLifecycleConfigurationV2(resourceName("backups-lifecycle"), {
+  bucket: backupBucket.id,
+  rules: [
+    {
+      id: "delete-old-backups",
+      status: "Enabled",
+      expiration: {
+        days: 30,
+      },
+      filter: {
+        prefix: "daily/",
+      },
+    },
+    {
+      id: "delete-old-weekly",
+      status: "Enabled",
+      expiration: {
+        days: 90,
+      },
+      filter: {
+        prefix: "weekly/",
+      },
+    },
+  ],
+});
+
+// IAM policy for EC2 to write backups to S3
+const backupPolicy = new aws.iam.RolePolicy(resourceName("ec2-backup-policy"), {
+  role: ec2Role.id,
+  policy: backupBucket.arn.apply((arn) =>
+    JSON.stringify({
+      Version: "2012-10-17",
+      Statement: [
+        {
+          Effect: "Allow",
+          Action: ["s3:PutObject", "s3:GetObject", "s3:ListBucket"],
+          Resource: [arn, `${arn}/*`],
+        },
+      ],
+    })
+  ),
+});
+
+// =============================================================================
 // EC2 Instance for Backend
 // =============================================================================
 
@@ -267,6 +332,45 @@ CWEOF
 # Start CloudWatch agent
 systemctl enable amazon-cloudwatch-agent
 systemctl start amazon-cloudwatch-agent
+
+# Setup database backup cron job
+cat > /opt/workout-log/backup.sh << 'BACKUPEOF'
+#!/bin/bash
+set -e
+DATE=$(date +%Y-%m-%d_%H-%M-%S)
+DAY_OF_WEEK=$(date +%u)
+DB_PATH=/opt/workout-log/data/workout.db
+BACKUP_BUCKET=${backupBucket.bucket}
+
+# Only backup if database exists
+if [ -f "$DB_PATH" ]; then
+  # Create a consistent backup using SQLite backup command
+  sqlite3 "$DB_PATH" ".backup /tmp/workout-backup.db"
+  
+  # Upload daily backup
+  aws s3 cp /tmp/workout-backup.db "s3://$BACKUP_BUCKET/daily/workout-$DATE.db"
+  
+  # On Sundays, also create weekly backup
+  if [ "$DAY_OF_WEEK" -eq 7 ]; then
+    aws s3 cp /tmp/workout-backup.db "s3://$BACKUP_BUCKET/weekly/workout-$DATE.db"
+  fi
+  
+  rm -f /tmp/workout-backup.db
+  echo "Backup completed: workout-$DATE.db"
+else
+  echo "Database not found at $DB_PATH, skipping backup"
+fi
+BACKUPEOF
+
+chmod +x /opt/workout-log/backup.sh
+chown workout-app:workout-app /opt/workout-log/backup.sh
+
+# Install sqlite3 for backup command
+dnf install -y sqlite
+
+# Add daily cron job (runs at 2 AM)
+echo "0 2 * * * root /opt/workout-log/backup.sh >> /var/log/workout-backup.log 2>&1" > /etc/cron.d/workout-backup
+chmod 644 /etc/cron.d/workout-backup
 
 # Install nginx as reverse proxy
 dnf install -y nginx
@@ -533,6 +637,7 @@ export const ec2InstanceId = ec2Instance.id;
 export const ec2PublicIp = eip.publicIp;
 export const ec2PublicDns = eip.publicDns;
 export const frontendBucketName = frontendBucket.bucket;
+export const backupBucketName = backupBucket.bucket;
 export const cloudfrontDistributionId = distribution.id;
 export const cloudfrontDomainName = distribution.domainName;
 export const appUrl = pulumi.interpolate`https://${distribution.domainName}`;

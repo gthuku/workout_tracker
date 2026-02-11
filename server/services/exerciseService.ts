@@ -62,9 +62,11 @@ export const exerciseService = {
 
         const exercises = await db.query<DbExercise>(query, params);
         return exercises.map((e) => ({
-          ...e,
+          id: e.id,
+          name: e.name,
+          equipment: e.equipment,
           primaryMuscles: JSON.parse(e.primary_muscles),
-          isCustom: e.is_custom,
+          isCustom: Boolean(e.is_custom),
         }));
       },
       CACHE_TTL.EXERCISES // 24 hours - exercises rarely change
@@ -92,7 +94,9 @@ export const exerciseService = {
     logger.info({ exerciseId: id, userId, name }, 'Custom exercise created');
 
     return {
-      ...exercise,
+      id: exercise.id,
+      name: exercise.name,
+      equipment: exercise.equipment,
       primaryMuscles: JSON.parse(exercise.primary_muscles),
       isCustom: true,
     };
@@ -186,6 +190,42 @@ export const exerciseService = {
         created_at: r.created_at,
       })),
     };
+  },
+
+  async delete(userId: string, exerciseId: string) {
+    // Verify the exercise is custom and belongs to the user
+    const exercise = await db.queryOne<DbExercise>(
+      'SELECT * FROM exercises WHERE id = $1',
+      [exerciseId]
+    );
+
+    if (!exercise) {
+      throw new Error('Exercise not found');
+    }
+
+    if (!exercise.is_custom) {
+      throw new Error('Cannot delete system exercises');
+    }
+
+    if (exercise.user_id !== userId) {
+      throw new Error('Not authorized to delete this exercise');
+    }
+
+    // Delete associated workout sets first (if any)
+    await db.execute('DELETE FROM workout_sets WHERE exercise_id = $1', [exerciseId]);
+
+    // Delete associated personal records (if any)
+    await db.execute('DELETE FROM personal_records WHERE exercise_id = $1', [exerciseId]);
+
+    // Delete the exercise
+    await db.execute('DELETE FROM exercises WHERE id = $1', [exerciseId]);
+
+    // Invalidate exercise list cache for this user
+    await cache.delPattern(`exercises:${userId}*`);
+
+    logger.info({ exerciseId, userId }, 'Custom exercise deleted');
+
+    return { success: true };
   },
 };
 

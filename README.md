@@ -67,6 +67,13 @@ A comprehensive full-stack workout tracking application built with modern web te
 | **CORS** | Cross-origin resource sharing middleware |
 | **UUID** | Unique identifier generation |
 
+### **Testing**
+| Technology | Purpose |
+|------------|---------|
+| **Vitest** | Fast unit test framework |
+| **Testing Library** | React component testing utilities |
+| **Happy DOM** | Lightweight DOM implementation for tests |
+
 ### **Development & Deployment**
 | Technology | Purpose |
 |------------|---------|
@@ -74,6 +81,9 @@ A comprehensive full-stack workout tracking application built with modern web te
 | **tsx** | TypeScript execution for development |
 | **Concurrently** | Run multiple development servers simultaneously |
 | **Vite Preview** | Production build preview |
+| **Docker** | Containerized deployment |
+| **Pulumi** | Infrastructure as code for AWS |
+| **GitHub Actions** | CI/CD pipeline |
 
 ### **Database Architecture**
 - **SQLite** with WAL mode for concurrent read/write operations
@@ -86,8 +96,10 @@ A comprehensive full-stack workout tracking application built with modern web te
 
 ### **Required**
 - **Node.js 20+** - JavaScript runtime environment
-- **Redis** - For caching layer (optional for dev, but recommended)
-- **SQLite** - Included automatically
+
+### **Optional**
+- **Redis** - Caching layer for improved performance (app works without it)
+- **Docker** - For containerized deployment
 
 ## Getting Started
 
@@ -110,9 +122,12 @@ npm install
 Override default settings with environment variables:
 
 ```bash
-# Database & Cache
+# Database
 export DATABASE_PATH=./workout.db
+
+# Redis Cache (optional - app works without it)
 export REDIS_URL=redis://localhost:6379
+export CACHE_ENABLED=true  # Set to false to disable caching
 
 # Server
 export PORT=3001
@@ -153,6 +168,16 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 | `npm start` | Start production server |
 | `npm run preview` | Preview production build locally |
 
+### **Testing**
+| Command | Description |
+|---------|-------------|
+| `npm test` | Run all tests once |
+| `npm run test:watch` | Run tests in watch mode |
+| `npm run test:ui` | Open Vitest UI |
+| `npm run test:coverage` | Run tests with coverage report |
+| `npm run test:client` | Run frontend tests only |
+| `npm run test:server` | Run backend tests only |
+
 ### **Quality & Maintenance**
 | Command | Description |
 |---------|-------------|
@@ -168,6 +193,7 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── 📁 pages/                    # Route components
 │   ├── 📁 store/                    # Zustand state management
 │   ├── 📁 types/                    # Shared TypeScript types
+│   ├── 📁 test/                     # Frontend tests
 │   └── index.css                    # Tailwind imports
 │
 ├── 📁 server/                       # Backend Express Application
@@ -176,11 +202,22 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── 📁 schemas/                  # Zod validation schemas
 │   ├── 📁 services/                 # Business logic layer
 │   ├── 📁 utils/                    # Utilities (cache, logger)
+│   ├── 📁 test/                     # Backend tests
 │   ├── index.ts                     # Entry point
 │   └── database.ts                  # Database configuration
 │
+├── 📁 infrastructure/               # Pulumi AWS Infrastructure
+│   └── index.ts                     # EC2, S3, CloudFront resources
+│
+├── 📁 .github/workflows/            # CI/CD Pipelines
+│   └── ci.yml                       # Lint, test, build, security
+│
+├── 📄 Dockerfile                    # Container build
+├── 📄 docker-compose.yml            # Local container orchestration
 ├── 📄 package.json                  # Dependencies and scripts
 ├── 📄 tsconfig.json                 # Shared TypeScript config
+├── 📄 vitest.config.ts              # Frontend test config
+├── 📄 vitest.config.server.ts       # Backend test config
 ├── 📄 workout.db                    # SQLite database
 └── 📄 dist/                         # Production build output
 ```
@@ -278,6 +315,28 @@ npm run build    # Build both frontend and backend
 npm start        # Start production server
 ```
 
+### **Docker Deployment**
+```bash
+# Build and run with Docker Compose
+docker-compose up -d
+
+# Or build manually
+docker build -t workout-log .
+docker run -p 3001:3001 -v workout-data:/app/data workout-log
+```
+
+### **AWS Deployment (Pulumi)**
+The `infrastructure/` folder contains Pulumi IaC for deploying to AWS:
+- **Frontend**: S3 + CloudFront CDN
+- **Backend**: EC2 with nginx reverse proxy
+- **Database**: SQLite with automated S3 backups
+- **Monitoring**: CloudWatch logs
+
+```bash
+cd infrastructure
+pulumi up
+```
+
 ### **Environment Variables**
 ```bash
 # Database (optional - defaults to ./workout.db)
@@ -291,10 +350,24 @@ NODE_ENV=production
 ## 🔒 Security Features
 
 - **Password Hashing** - bcrypt with salt rounds
-- **Input Validation** - Request validation with error handling
+- **Input Validation** - Zod schema validation on all endpoints
 - **SQL Injection Protection** - Parameterized queries
 - **CORS Configuration** - Proper cross-origin handling
+- **Rate Limiting** - express-rate-limit for API protection
+- **Security Headers** - Helmet middleware for HTTP headers
 - **Authentication System** - Secure login with session management
+
+## 🔄 CI/CD Pipeline
+
+GitHub Actions workflow runs on every push and PR:
+
+| Job | Description |
+|-----|-------------|
+| **Lint & Type Check** | ESLint + TypeScript validation |
+| **Test** | Frontend and backend test suites |
+| **Build** | Production build verification |
+| **Migration Check** | Database migration validation |
+| **Security Audit** | npm audit for vulnerabilities |
 
 ## 🏗️ Architecture Patterns
 
@@ -326,15 +399,22 @@ User Action → React Component → Zustand Store → API Client → Express Rou
 
 ## 📈 Recent Improvements
 
-### **Critical Fixes (Latest)**
+### **Infrastructure & DevOps**
+- ✅ **CI/CD Pipeline** - GitHub Actions for automated testing and builds
+- ✅ **Docker Support** - Containerized deployment with docker-compose
+- ✅ **AWS Infrastructure** - Pulumi IaC for EC2, S3, CloudFront deployment
+- ✅ **Automated Backups** - Daily SQLite backups to S3 with lifecycle policies
+- ✅ **Test Suite** - Vitest for frontend and backend testing
+
+### **Critical Fixes**
 - ✅ **Database Transactions** - All multi-step operations wrapped in atomic transactions
 - ✅ **WAL Mode Enabled** - Concurrent database access with Write-Ahead Logging
 - ✅ **Optimistic UI Updates** - State rollback on API failures
 - ✅ **Foreign Key Constraints** - Data integrity with CASCADE deletes
-- ✅ **Request Validation** - Server-side validation for all inputs (reps, weight, exercises)
+- ✅ **Request Validation** - Zod schema validation for all inputs
 - ✅ **Type Safety** - Comprehensive TypeScript coverage end-to-end
 
-### **New Features**
+### **Features**
 - ✅ **Profile Pictures** - Upload and display avatar images (base64 storage)
 - ✅ **Cardio Exercise Support** - Duration-based tracking for cardio exercises
 - ✅ **Multiple Fitness Goals** - Select multiple objectives per profile

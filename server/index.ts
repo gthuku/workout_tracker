@@ -97,6 +97,13 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
 app.use(apiLimiter);
 
+// API Version header
+const API_VERSION = '1.0.0';
+app.use((req, res, next) => {
+  res.setHeader('X-API-Version', API_VERSION);
+  next();
+});
+
 // Request logging
 app.use((req, res, next) => {
   const start = Date.now();
@@ -299,6 +306,11 @@ v1Router.post('/exercises', requireAuth, asyncHandler(async (req, res) => {
   res.json(exercise);
 }));
 
+v1Router.delete('/exercises/:exerciseId', requireAuth, asyncHandler(async (req, res) => {
+  const result = await exerciseService.delete(getUserId(req), req.params.exerciseId as string);
+  res.json(result);
+}));
+
 v1Router.get('/exercises/:exerciseId/history', requireAuth, asyncHandler(async (req, res) => {
   const { weeks } = HistoryQuerySchema.parse(req.query);
   const history = await exerciseService.getHistory(getUserId(req), req.params.exerciseId as string, weeks);
@@ -396,10 +408,19 @@ v1Router.get('/personal-records', requireAuth, asyncHandler(async (req, res) => 
   res.json(prs);
 }));
 
+import { serveStatic } from './static.js';
+
+// ... (existing imports)
+
 // ============ MOUNT ROUTERS ============
 // Mount v1 router at both /api/v1 and /api (for backward compatibility)
 app.use('/api/v1', v1Router);
 app.use('/api', v1Router);
+
+// Serve static frontend files (in production)
+if (process.env.NODE_ENV === 'production') {
+  serveStatic(app);
+}
 
 // ============ ERROR HANDLER ============
 app.use(errorHandler);
