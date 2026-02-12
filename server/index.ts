@@ -362,11 +362,6 @@ v1Router.delete('/workouts', requireAuth, asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
-v1Router.delete('/workouts/incomplete', requireAuth, asyncHandler(async (req, res) => {
-  const result = await workoutService.deleteIncomplete(getUserId(req));
-  res.json(result);
-}));
-
 v1Router.delete('/workouts/:id', requireAuth, asyncHandler(async (req, res) => {
   const result = await workoutService.delete(req.params.id as string, getUserId(req));
   res.json(result);
