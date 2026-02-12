@@ -59,12 +59,12 @@ function getAuthToken(): string | null {
 }
 
 // Set JWT token in localStorage
-export function setAuthToken(token: string): void {
+function setAuthToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
 
 // Clear JWT token from localStorage
-export function clearAuthToken(): void {
+function clearAuthToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
@@ -74,24 +74,19 @@ function getCurrentUserId(): string | null {
 }
 
 // Set current user ID (backward compatibility)
-export function setCurrentUserId(userId: string): void {
+function setCurrentUserId(userId: string): void {
   localStorage.setItem(USER_ID_KEY, userId);
 }
 
 // Clear current user ID
-export function clearCurrentUserId(): void {
+function clearCurrentUserId(): void {
   localStorage.removeItem(USER_ID_KEY);
 }
 
 // Clear all auth data (for logout)
-export function clearAuth(): void {
+function clearAuth(): void {
   clearAuthToken();
   clearCurrentUserId();
-}
-
-// Check if user is authenticated
-export function isAuthenticated(): boolean {
-  return !!getAuthToken() || !!getCurrentUserId();
 }
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
