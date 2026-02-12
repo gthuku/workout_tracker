@@ -31,6 +31,9 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV DATABASE_PATH=/app/data/workout.db
 
+# Install AWS CLI for S3 sync
+RUN apk add --no-cache aws-cli
+
 # Create data directory
 RUN mkdir -p /app/data && chown -R node:node /app/data
 
@@ -39,11 +42,15 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 
+# Copy entrypoint script
+COPY entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
 # Switch to non-root user
 USER node
 
 # Expose port
 EXPOSE 3001
 
-# Start server
-CMD ["node", "dist/server/index.js"]
+# Use entrypoint script for S3 sync + app startup
+ENTRYPOINT ["./entrypoint.sh"]

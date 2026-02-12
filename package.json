@@ -25,7 +25,10 @@
     "test:ui": "vitest --ui",
     "test:coverage": "vitest run --coverage",
     "test:client": "vitest run --config vitest.config.ts",
-    "test:server": "vitest run --config vitest.config.server.ts"
+    "test:server": "vitest run --config vitest.config.server.ts",
+    "backup:test": "./scripts/restore-test.sh",
+    "backup:test:all": "./scripts/restore-test.sh --all",
+    "backup:test:local": "./scripts/restore-test.sh --file"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

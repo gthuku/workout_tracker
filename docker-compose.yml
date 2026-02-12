@@ -5,8 +5,23 @@ services:
       - "3001:3001"
     environment:
       - NODE_ENV=production
+      # S3 configuration for database sync
+      - S3_BUCKET=workout-log-dev-backups
+      # Pull/backup this exact database object key
+      - S3_DB_KEY=workout-alt.db
+      # Prefix fallback is used only when S3_DB_KEY is unset
+      - S3_DB_PREFIX=daily/
+      - BACKUP_INTERVAL=300
+      - AWS_DEFAULT_REGION=us-east-1
+      # Local-only: lets forgot-password UI receive reset token directly.
+      - AUTH_EXPOSE_RESET_TOKEN=true
+      # AWS credentials - not needed on EC2 (uses IAM role)
+      # Uncomment if deploying outside AWS or without an instance profile
+      # - AWS_ACCESS_KEY_ID=your-access-key
+      # - AWS_SECRET_ACCESS_KEY=your-secret-key
     volumes:
       - workout-data:/app/data
+      - ~/.aws:/home/node/.aws:ro # Mount local AWS credentials (for non-EC2 environments)
     restart: unless-stopped
 
 volumes:

@@ -12,6 +12,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'workout-log-dev-secret-change-in-p
 const JWT_EXPIRES_IN = '7d';
 const RESET_TOKEN_EXPIRES_HOURS = 1;
 
+function shouldExposeResetToken(): boolean {
+  return process.env.NODE_ENV !== 'production' || process.env.AUTH_EXPOSE_RESET_TOKEN === 'true';
+}
+
 interface DbUser {
   id: string;
   username: string;
@@ -197,11 +201,10 @@ export const authService = {
 
     logger.info({ userId: user.id }, 'Password reset token generated');
 
-    const isDev = process.env.NODE_ENV !== 'production';
     return {
       success: true,
       message: 'If an account exists, a reset token has been generated',
-      ...(isDev && { resetToken, expiresIn: `${RESET_TOKEN_EXPIRES_HOURS} hour(s)` }),
+      ...(shouldExposeResetToken() && { resetToken, expiresIn: `${RESET_TOKEN_EXPIRES_HOURS} hour(s)` }),
     };
   },
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { authService } from '../services/authService.js';
 
 // Mock the database module
@@ -15,8 +15,18 @@ vi.mock('../database.js', () => ({
 import { db } from '../database.js';
 
 describe('AuthService', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalExposeResetToken = process.env.AUTH_EXPOSE_RESET_TOKEN;
+
     beforeEach(() => {
         vi.clearAllMocks();
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.AUTH_EXPOSE_RESET_TOKEN = originalExposeResetToken;
+    });
+
+    afterEach(() => {
+        process.env.NODE_ENV = originalNodeEnv;
+        process.env.AUTH_EXPOSE_RESET_TOKEN = originalExposeResetToken;
     });
 
     describe('generateToken', () => {
@@ -137,6 +147,74 @@ describe('AuthService', () => {
                     password: 'password123',
                 })
             ).rejects.toThrow('Invalid credentials');
+        });
+    });
+
+    describe('requestReset', () => {
+        it('should include reset token outside production', async () => {
+            process.env.NODE_ENV = 'development';
+            delete process.env.AUTH_EXPOSE_RESET_TOKEN;
+
+            const mockDb = db as unknown as {
+                queryOne: ReturnType<typeof vi.fn>;
+                execute: ReturnType<typeof vi.fn>;
+            };
+
+            mockDb.queryOne.mockResolvedValueOnce({
+                id: 'user-123',
+                username: 'testuser',
+                email: 'test@example.com',
+            });
+            mockDb.execute.mockResolvedValue(undefined);
+
+            const result = await authService.requestReset('testuser');
+            expect(result.success).toBe(true);
+            expect('resetToken' in result ? result.resetToken : undefined).toBeTruthy();
+            expect('expiresIn' in result ? result.expiresIn : undefined).toBe('1 hour(s)');
+        });
+
+        it('should hide reset token in production by default', async () => {
+            process.env.NODE_ENV = 'production';
+            delete process.env.AUTH_EXPOSE_RESET_TOKEN;
+
+            const mockDb = db as unknown as {
+                queryOne: ReturnType<typeof vi.fn>;
+                execute: ReturnType<typeof vi.fn>;
+            };
+
+            mockDb.queryOne.mockResolvedValueOnce({
+                id: 'user-123',
+                username: 'testuser',
+                email: 'test@example.com',
+            });
+            mockDb.execute.mockResolvedValue(undefined);
+
+            const result = await authService.requestReset('testuser');
+            expect(result.success).toBe(true);
+            expect('resetToken' in result ? result.resetToken : undefined).toBeUndefined();
+            expect('expiresIn' in result ? result.expiresIn : undefined).toBeUndefined();
+        });
+
+        it('should include reset token in production when explicitly enabled', async () => {
+            process.env.NODE_ENV = 'production';
+            process.env.AUTH_EXPOSE_RESET_TOKEN = 'true';
+
+            const mockDb = db as unknown as {
+                queryOne: ReturnType<typeof vi.fn>;
+                execute: ReturnType<typeof vi.fn>;
+            };
+
+            mockDb.queryOne.mockResolvedValueOnce({
+                id: 'user-123',
+                username: 'testuser',
+                email: 'test@example.com',
+            });
+            mockDb.execute.mockResolvedValue(undefined);
+
+            const result = await authService.requestReset('testuser');
+            expect(result.success).toBe(true);
+            expect('resetToken' in result ? result.resetToken : undefined).toBeTruthy();
+            expect('expiresIn' in result ? result.expiresIn : undefined).toBe('1 hour(s)');
         });
     });
 });

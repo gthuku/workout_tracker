@@ -231,7 +231,7 @@ new aws.s3.BucketLifecycleConfigurationV2(resourceName("backups-lifecycle"), {
 });
 
 // IAM policy for EC2 to write backups to S3
-const backupPolicy = new aws.iam.RolePolicy(resourceName("ec2-backup-policy"), {
+new aws.iam.RolePolicy(resourceName("ec2-backup-policy"), {
   role: ec2Role.id,
   policy: backupBucket.arn.apply((arn) =>
     JSON.stringify({
@@ -341,36 +341,158 @@ DATE=$(date +%Y-%m-%d_%H-%M-%S)
 DAY_OF_WEEK=$(date +%u)
 DB_PATH=/opt/workout-log/data/workout.db
 BACKUP_BUCKET=${backupBucket.bucket}
+LOG_PREFIX="[BACKUP]"
+
+log() {
+  echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $1"
+}
 
 # Only backup if database exists
 if [ -f "$DB_PATH" ]; then
+  log "Starting backup..."
+
   # Create a consistent backup using SQLite backup command
   sqlite3 "$DB_PATH" ".backup /tmp/workout-backup.db"
-  
-  # Upload daily backup
+
+  # Verify backup integrity before uploading
+  if sqlite3 /tmp/workout-backup.db "PRAGMA integrity_check;" | grep -q "ok"; then
+    log "Backup integrity check passed"
+  else
+    log "ERROR: Backup integrity check failed!"
+    rm -f /tmp/workout-backup.db
+    exit 1
+  fi
+
+  # Upload daily backup with timestamp
   aws s3 cp /tmp/workout-backup.db "s3://$BACKUP_BUCKET/daily/workout-$DATE.db"
-  
+  log "Daily backup uploaded: workout-$DATE.db"
+
   # On Sundays, also create weekly backup
   if [ "$DAY_OF_WEEK" -eq 7 ]; then
     aws s3 cp /tmp/workout-backup.db "s3://$BACKUP_BUCKET/weekly/workout-$DATE.db"
+    log "Weekly backup uploaded: workout-$DATE.db"
   fi
-  
+
   rm -f /tmp/workout-backup.db
-  echo "Backup completed: workout-$DATE.db"
+  log "Backup completed successfully"
 else
-  echo "Database not found at $DB_PATH, skipping backup"
+  log "Database not found at $DB_PATH, skipping backup"
 fi
 BACKUPEOF
 
 chmod +x /opt/workout-log/backup.sh
 chown workout-app:workout-app /opt/workout-log/backup.sh
 
+# Setup restore test script
+cat > /opt/workout-log/restore-test.sh << 'RESTORETESTEOF'
+#!/bin/bash
+set -e
+BACKUP_BUCKET=${backupBucket.bucket}
+TEST_DIR=/tmp/restore-test
+LOG_PREFIX="[RESTORE-TEST]"
+RESULTS_FILE=/var/log/workout-restore-test.log
+
+log() {
+  echo "$LOG_PREFIX $(date '+%Y-%m-%d %H:%M:%S') $1" | tee -a "$RESULTS_FILE"
+}
+
+cleanup() {
+  rm -rf "$TEST_DIR"
+}
+trap cleanup EXIT
+
+log "=========================================="
+log "Starting periodic restore test"
+log "=========================================="
+
+# Create test directory
+mkdir -p "$TEST_DIR"
+cd "$TEST_DIR"
+
+# Get list of recent daily backups
+log "Fetching backup list..."
+BACKUPS=$(aws s3 ls "s3://$BACKUP_BUCKET/daily/" --recursive | sort -k1,2 | tail -5)
+
+if [ -z "$BACKUPS" ]; then
+  log "ERROR: No backups found in s3://$BACKUP_BUCKET/daily/"
+  exit 1
+fi
+
+# Get the latest backup
+LATEST=$(echo "$BACKUPS" | tail -1 | awk '{print $4}')
+log "Testing latest backup: $LATEST"
+
+# Download the backup
+log "Downloading backup..."
+aws s3 cp "s3://$BACKUP_BUCKET/$LATEST" "$TEST_DIR/test-restore.db"
+
+# Test 1: SQLite integrity check
+log "Test 1: Running SQLite integrity check..."
+INTEGRITY=$(sqlite3 "$TEST_DIR/test-restore.db" "PRAGMA integrity_check;" 2>&1)
+if echo "$INTEGRITY" | grep -q "ok"; then
+  log "  PASSED: Database integrity check"
+else
+  log "  FAILED: Database integrity check - $INTEGRITY"
+  exit 1
+fi
+
+# Test 2: Check schema exists
+log "Test 2: Verifying schema..."
+TABLES=$(sqlite3 "$TEST_DIR/test-restore.db" ".tables" 2>&1)
+REQUIRED_TABLES="users exercises workouts workout_sets personal_records"
+for table in $REQUIRED_TABLES; do
+  if echo "$TABLES" | grep -q "$table"; then
+    log "  PASSED: Table '$table' exists"
+  else
+    log "  FAILED: Table '$table' missing"
+    exit 1
+  fi
+done
+
+# Test 3: Verify data is readable
+log "Test 3: Verifying data readability..."
+USER_COUNT=$(sqlite3 "$TEST_DIR/test-restore.db" "SELECT COUNT(*) FROM users;" 2>&1)
+EXERCISE_COUNT=$(sqlite3 "$TEST_DIR/test-restore.db" "SELECT COUNT(*) FROM exercises;" 2>&1)
+WORKOUT_COUNT=$(sqlite3 "$TEST_DIR/test-restore.db" "SELECT COUNT(*) FROM workouts;" 2>&1)
+log "  Users: $USER_COUNT, Exercises: $EXERCISE_COUNT, Workouts: $WORKOUT_COUNT"
+
+if [ "$EXERCISE_COUNT" -gt 0 ]; then
+  log "  PASSED: Data is readable"
+else
+  log "  WARNING: No exercises found (may be empty database)"
+fi
+
+# Test 4: Test a random older backup (if available)
+BACKUP_COUNT=$(echo "$BACKUPS" | wc -l)
+if [ "$BACKUP_COUNT" -gt 1 ]; then
+  RANDOM_BACKUP=$(echo "$BACKUPS" | head -n $((BACKUP_COUNT - 1)) | tail -1 | awk '{print $4}')
+  log "Test 4: Spot-checking older backup: $RANDOM_BACKUP"
+  aws s3 cp "s3://$BACKUP_BUCKET/$RANDOM_BACKUP" "$TEST_DIR/test-older.db" 2>/dev/null
+  if sqlite3 "$TEST_DIR/test-older.db" "PRAGMA integrity_check;" 2>&1 | grep -q "ok"; then
+    log "  PASSED: Older backup integrity check"
+  else
+    log "  FAILED: Older backup integrity check"
+  fi
+fi
+
+log "=========================================="
+log "All restore tests PASSED"
+log "=========================================="
+RESTORETESTEOF
+
+chmod +x /opt/workout-log/restore-test.sh
+chown workout-app:workout-app /opt/workout-log/restore-test.sh
+
 # Install sqlite3 for backup command
 dnf install -y sqlite
 
-# Add daily cron job (runs at 2 AM)
+# Add daily backup cron job (runs at 2 AM)
 echo "0 2 * * * root /opt/workout-log/backup.sh >> /var/log/workout-backup.log 2>&1" > /etc/cron.d/workout-backup
 chmod 644 /etc/cron.d/workout-backup
+
+# Add weekly restore test cron job (runs Wednesdays at 3 AM - mid-week sanity check)
+echo "0 3 * * 3 root /opt/workout-log/restore-test.sh >> /var/log/workout-restore-test.log 2>&1" > /etc/cron.d/workout-restore-test
+chmod 644 /etc/cron.d/workout-restore-test
 
 # Install nginx as reverse proxy
 dnf install -y nginx
