@@ -101,15 +101,21 @@ export function RestTimer({ isVisible, onClose, defaultSeconds = 90 }: RestTimer
         };
     }, [isRunning, timeRemaining, playBeep, playCompletionSound]);
 
-    // Auto-start when opened
-    useEffect(() => {
+    // Auto-start when opened (adjust state during render)
+    const [prevVisible, setPrevVisible] = useState(isVisible);
+    const [prevInitialTime, setPrevInitialTime] = useState(initialTime);
+    if (isVisible !== prevVisible) {
+        setPrevVisible(isVisible);
         if (isVisible) {
             setTimeRemaining(initialTime);
             setIsRunning(true);
         } else {
             setIsRunning(false);
         }
-    }, [isVisible, initialTime]);
+    } else if (isVisible && initialTime !== prevInitialTime) {
+        setPrevInitialTime(initialTime);
+        setTimeRemaining(initialTime);
+    }
 
     const handleReset = () => {
         setTimeRemaining(initialTime);

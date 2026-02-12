@@ -231,7 +231,7 @@ new aws.s3.BucketLifecycleConfigurationV2(resourceName("backups-lifecycle"), {
 });
 
 // IAM policy for EC2 to write backups to S3
-const backupPolicy = new aws.iam.RolePolicy(resourceName("ec2-backup-policy"), {
+new aws.iam.RolePolicy(resourceName("ec2-backup-policy"), {
   role: ec2Role.id,
   policy: backupBucket.arn.apply((arn) =>
     JSON.stringify({
