@@ -111,7 +111,7 @@ npm install
 
 **SQLite (Default and Only Supported Database)**
 - No setup required! SQLite database is created automatically
-- Database file: `workout.db` (created in project root)
+- Database file: `workout.db` (created in project root, gitignored)
 - Schema and seed data initialize automatically on first server start
 - Includes WAL mode for concurrent access and performance optimizations
 
@@ -199,9 +199,9 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 │   ├── index.ts                     # Entry point
 │   └── database.ts                  # Database configuration
 │
+├── 📁 infrastructure/               # Pulumi IaC for AWS deployment
 ├── 📄 package.json                  # Dependencies and scripts
 ├── 📄 tsconfig.json                 # Shared TypeScript config
-├── 📄 workout.db                    # SQLite database
 └── 📄 dist/                         # Production build output
 ```
 
@@ -244,7 +244,6 @@ This starts both the Vite frontend (port 5173) and Express backend (port 3001).
 | `PATCH` | `/api/workouts/:id` | Update workout (name, notes, completion) |
 | `DELETE` | `/api/workouts/:id` | Delete workout |
 | `DELETE` | `/api/workouts` | Clear all workouts (dangerous) |
-| `DELETE` | `/api/workouts/incomplete` | Clean up incomplete/abandoned workouts |
 
 ### **Workout Sets**
 | Method | Endpoint | Description |
