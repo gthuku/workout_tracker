@@ -312,7 +312,7 @@ export const workoutApi = {
       method: 'POST',
       body: JSON.stringify(data || {}),
     }),
-  update: (id: string, data: Partial<{ name: string; notes: string; isComplete: boolean; duration: number }>) =>
+  update: (id: string, data: Partial<{ name: string; date: string; notes: string; isComplete: boolean; duration: number }>) =>
     fetchJson<Workout>(`/api/workouts/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(data),

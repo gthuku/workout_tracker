@@ -153,7 +153,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username.trim()) {
-      setError('Please enter your username');
+      setError('Please enter your username or email');
       return;
     }
 
@@ -175,7 +175,15 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
     setSubmitting(true);
     setError('');
     try {
-      const result = await authApi.resetPassword(username.trim(), password);
+      const resetRequest = await authApi.requestReset(username.trim());
+      const resetToken = resetRequest.resetToken;
+
+      if (!resetToken) {
+        setError('Password reset is unavailable in this environment. Ask an admin to enable reset token delivery.');
+        return;
+      }
+
+      const result = await authApi.resetPassword(resetToken, password);
       setResetSuccess(`Password reset successfully for ${result.displayName}!`);
       setPassword('');
       setConfirmPassword('');
@@ -331,19 +339,19 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
               <>
                 <div className="text-center mb-4">
                   <p className="text-slate-400 text-sm">
-                    Enter your username and a new password to reset your account.
+                    Enter your username or email and a new password to reset your account.
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm text-slate-400 mb-1">Username</label>
+                  <label className="block text-sm text-slate-400 mb-1">Username or Email</label>
                   <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                     <input
                       type="text"
                       value={username}
                       onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Enter your username"
+                      placeholder="Enter your username or email"
                       className="input w-full !pl-10"
                       autoFocus
                       required
