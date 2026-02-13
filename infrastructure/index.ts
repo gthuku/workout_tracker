@@ -7,6 +7,9 @@ const config = new pulumi.Config();
 const environment = config.get("environment") || "dev";
 const appName = "workout-log";
 const instanceType = config.get("instanceType") || "t3.micro";
+const jwtSecret = config.requireSecret("jwtSecret");
+const frontendUrl = config.get("frontendUrl") || "https://wrkoutlog.fit";
+const corsAllowedOrigins = config.get("corsAllowedOrigins") || "https://www.wrkoutlog.fit";
 
 // Resource naming helper
 const resourceName = (name: string) => `${appName}-${environment}-${name}`;
@@ -292,7 +295,13 @@ Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=DATABASE_PATH=/opt/workout-log/data/workout.db
 Environment=UPLOADS_PATH=/opt/workout-log/uploads
-ExecStart=/usr/bin/node /opt/workout-log/server/index.js
+Environment=FRONTEND_URL=${frontendUrl}
+Environment=CORS_ALLOWED_ORIGINS=${corsAllowedOrigins}
+Environment=REDIS_URL=redis://127.0.0.1:6379
+Environment=CACHE_ENABLED=true
+Environment=TRUST_PROXY=1
+Environment=JWT_SECRET=${jwtSecret}
+ExecStart=/usr/bin/node /opt/workout-log/dist/server/index.js
 Restart=always
 RestartSec=10
 StandardOutput=journal
@@ -306,6 +315,18 @@ SERVICEEOF
 # Enable the service (will start after code deployment)
 systemctl daemon-reload
 systemctl enable workout-log
+
+# Install and start Redis for cache
+dnf install -y redis6 || dnf install -y redis
+systemctl enable redis6 || systemctl enable redis
+systemctl start redis6 || systemctl start redis
+
+# Ensure PM2 does not manage backend processes (systemd is the source of truth)
+systemctl disable --now pm2-root || true
+if command -v pm2 >/dev/null 2>&1; then
+  PM2_HOME=/etc/.pm2 pm2 delete all || true
+  PM2_HOME=/etc/.pm2 pm2 kill || true
+fi
 
 # Install CloudWatch agent for logs
 dnf install -y amazon-cloudwatch-agent
@@ -523,10 +544,10 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Health check endpoint
+    # Health check endpoint - proxy to backend
     location /health {
-        return 200 'OK';
-        add_header Content-Type text/plain;
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
     }
 }
 NGINXEOF
@@ -789,9 +810,11 @@ To deploy your code:
 
    On the server:
    cd /opt/workout-log
-   # Copy your server files here
+   # Copy project files here
    npm install --production
+   npm run build:server
    sudo systemctl restart workout-log
+   sudo systemctl status workout-log --no-pager
 
 5. Verify deployment:
    curl https://${distribution.domainName}/api/exercises
