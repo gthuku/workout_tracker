@@ -7,6 +7,7 @@ const config = new pulumi.Config();
 const environment = config.get("environment") || "dev";
 const appName = "workout-log";
 const instanceType = config.get("instanceType") || "t3.micro";
+const jwtSecret = config.requireSecret("jwtSecret");
 
 // Resource naming helper
 const resourceName = (name: string) => `${appName}-${environment}-${name}`;
@@ -292,6 +293,7 @@ Environment=NODE_ENV=production
 Environment=PORT=3001
 Environment=DATABASE_PATH=/opt/workout-log/data/workout.db
 Environment=UPLOADS_PATH=/opt/workout-log/uploads
+Environment=JWT_SECRET=${jwtSecret}
 ExecStart=/usr/bin/node /opt/workout-log/server/index.js
 Restart=always
 RestartSec=10
@@ -523,10 +525,10 @@ server {
         add_header Cache-Control "public, immutable";
     }
 
-    # Health check endpoint
+    # Health check endpoint - proxy to backend
     location /health {
-        return 200 'OK';
-        add_header Content-Type text/plain;
+        proxy_pass http://127.0.0.1:3001;
+        proxy_set_header Host $host;
     }
 }
 NGINXEOF

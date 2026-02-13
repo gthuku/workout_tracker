@@ -44,14 +44,19 @@ const ALLOWED_ORIGINS = [
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
-    if (!origin && process.env.NODE_ENV !== 'production') {
+    // Allow requests with no origin (e.g. server-to-server, curl)
+    if (!origin) {
       return callback(null, true);
     }
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
+    // Allow configured origins
+    if (ALLOWED_ORIGINS.includes(origin)) {
+      return callback(null, true);
     }
+    // In production, allow CloudFront origins (*.cloudfront.net)
+    if (process.env.NODE_ENV === 'production' && origin.endsWith('.cloudfront.net')) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
