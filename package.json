@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build && npm run build:server",
     "build:server": "tsc -p tsconfig.server.json",
     "build:client": "vite build --mode production",
-    "start": "node dist/server/index.js",
+    "start": "NODE_ENV=production node dist/server/index.js",
     "deploy:frontend": "npm run build:client && aws s3 sync dist/ s3://workout-log-frontend --delete --cache-control max-age=31536000,public",
     "deploy:backend": "eb deploy",
     "lint": "eslint .",

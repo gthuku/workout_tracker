@@ -1,20 +1,36 @@
 import pino, { Logger } from 'pino';
+import { createRequire } from 'module';
 import { getRequestId } from '../middleware/requestId.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
+const require = createRequire(import.meta.url);
+
+function canUsePrettyTransport(): boolean {
+  if (!isDev) return false;
+
+  try {
+    require.resolve('pino-pretty');
+    return true;
+  } catch {
+    // In production installs, dev dependencies may be omitted.
+    return false;
+  }
+}
+
+const prettyTransport = canUsePrettyTransport()
+  ? {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname',
+      },
+    }
+  : undefined;
 
 const baseLogger = pino({
   level: process.env.LOG_LEVEL || (isDev ? 'debug' : 'info'),
-  transport: isDev
-    ? {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname',
-        },
-      }
-    : undefined,
+  transport: prettyTransport,
   base: {
     env: process.env.NODE_ENV || 'development',
   },

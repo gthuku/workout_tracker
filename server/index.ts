@@ -7,7 +7,7 @@ import { seedExercises, createDefaultUser } from './seed.js';
 import logger from './utils/logger.js';
 import cache from './utils/cache.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
-import { errorHandler, asyncHandler, UnauthorizedError } from './middleware/errorHandler.js';
+import { errorHandler, asyncHandler, UnauthorizedError, ForbiddenError } from './middleware/errorHandler.js';
 import { authService, userService, workoutService, exerciseService, statsService } from './services/index.js';
 import {
   RegisterSchema,
@@ -34,13 +34,30 @@ import {
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
+function splitOrigins(value?: string): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
+function normalizeOrigin(origin: string): string {
+  return origin.replace(/\/+$/, '');
+}
+
+const configuredOrigins = [
+  ...splitOrigins(process.env.FRONTEND_URL),
+  ...splitOrigins(process.env.CORS_ALLOWED_ORIGINS),
+].map(normalizeOrigin);
+
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3001',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3001',
-  process.env.FRONTEND_URL,
-].filter(Boolean) as string[];
+  ...configuredOrigins,
+].map(normalizeOrigin);
 
 const corsOptions: cors.CorsOptions = {
   origin: (origin, callback) => {
@@ -48,15 +65,17 @@ const corsOptions: cors.CorsOptions = {
     if (!origin) {
       return callback(null, true);
     }
+    const normalizedOrigin = normalizeOrigin(origin);
     // Allow configured origins
-    if (ALLOWED_ORIGINS.includes(origin)) {
+    if (ALLOWED_ORIGINS.includes(normalizedOrigin)) {
       return callback(null, true);
     }
     // In production, allow CloudFront origins (*.cloudfront.net)
-    if (process.env.NODE_ENV === 'production' && origin.endsWith('.cloudfront.net')) {
+    if (process.env.NODE_ENV === 'production' && normalizedOrigin.endsWith('.cloudfront.net')) {
       return callback(null, true);
     }
-    callback(new Error('Not allowed by CORS'));
+    logger.warn({ origin: normalizedOrigin }, 'Blocked by CORS policy');
+    callback(new ForbiddenError('Origin not allowed by CORS policy'));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -83,6 +102,9 @@ const apiLimiter = rateLimit({
 // ============ EXPRESS APP SETUP ============
 const app = express();
 const PORT = process.env.PORT || 3001;
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1' || process.env.NODE_ENV === 'production';
+
+app.set('trust proxy', TRUST_PROXY);
 
 // Security middleware
 app.use(helmet({
