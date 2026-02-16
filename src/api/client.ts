@@ -136,6 +136,15 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     throw new Error(errorMessage);
   }
 
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    // Most commonly indicates the SPA HTML was served instead of the API response (e.g. misrouting / 403/404 rewrite).
+    const text = await response.text().catch(() => '');
+    const looksLikeHtml = text.trim().startsWith('<!doctype') || text.trim().startsWith('<html');
+    const hint = looksLikeHtml ? ' (received HTML)' : '';
+    throw new Error(`Unexpected response format from API${hint}. Please try again.`);
+  }
+
   return response.json();
 }
 
@@ -214,11 +223,22 @@ export const authApi = {
     return response;
   },
 
-  updateEmail: (email: string) =>
+  updateEmail: (email: string | null) =>
     fetchJson<{ success: boolean }>('/api/auth/email', {
       method: 'PATCH',
       body: JSON.stringify({ email }),
     }),
+
+  updateUsername: async (username: string) => {
+    const response = await fetchJson<{ success: boolean; token?: string }>('/api/auth/username', {
+      method: 'PATCH',
+      body: JSON.stringify({ username }),
+    });
+    if (response.token) {
+      setAuthToken(response.token);
+    }
+    return response;
+  },
 
   changePassword: async (currentPassword: string, newPassword: string) => {
     const response = await fetchJson<{ success: boolean; token?: string }>('/api/auth/change-password', {
@@ -365,8 +385,15 @@ export const squadApi = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
-  getDashboard: (squadId: string) =>
-    fetchJson<SquadDashboard>(`/api/squads/${squadId}/dashboard`),
+  getDashboard: (squadId: string) => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const params = new URLSearchParams();
+    if (timezone) {
+      params.set('timezone', timezone);
+    }
+    const query = params.toString();
+    return fetchJson<SquadDashboard>(`/api/squads/${squadId}/dashboard${query ? `?${query}` : ''}`);
+  },
   getWorkout: (workoutId: string) =>
     fetchJson<SquadWorkout>(`/api/squads/workouts/${workoutId}`),
   leave: (squadId: string) =>
