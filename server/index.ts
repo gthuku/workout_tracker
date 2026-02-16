@@ -8,7 +8,7 @@ import logger from './utils/logger.js';
 import cache from './utils/cache.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { errorHandler, asyncHandler, UnauthorizedError, ForbiddenError } from './middleware/errorHandler.js';
-import { authService, userService, workoutService, exerciseService, statsService } from './services/index.js';
+import { authService, userService, workoutService, exerciseService, statsService, squadService } from './services/index.js';
 import {
   RegisterSchema,
   LoginSchema,
@@ -31,6 +31,12 @@ import {
   MuscleGroupsQuerySchema,
   PaginationSchema,
   PRTrendsQuerySchema,
+  CreateSquadSchema,
+  InviteUserSchema,
+  RespondInviteSchema,
+  AddReactionSchema,
+  JoinSquadSchema,
+  UserSearchSchema,
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
@@ -428,6 +434,75 @@ v1Router.get('/personal-records', requireAuth, asyncHandler(async (req, res) => 
   const { limit } = PaginationSchema.parse(req.query);
   const prs = await statsService.getPersonalRecords(getUserId(req), limit);
   res.json(prs);
+}));
+
+// --- Squads ---
+v1Router.get('/squads/invites', requireAuth, asyncHandler(async (req, res) => {
+  const invites = await squadService.listInvites(getUserId(req));
+  res.json(invites);
+}));
+
+v1Router.post('/squads/join', requireAuth, asyncHandler(async (req, res) => {
+  const { code } = JoinSquadSchema.parse(req.body);
+  const squad = await squadService.joinByCode(getUserId(req), code);
+  res.json(squad);
+}));
+
+v1Router.get('/squads/users/search', requireAuth, asyncHandler(async (req, res) => {
+  const { q } = UserSearchSchema.parse(req.query);
+  const squadId = req.query.excludeSquadId as string | undefined;
+  const users = await squadService.searchUsers(q, squadId);
+  res.json(users);
+}));
+
+v1Router.post('/squads/reactions', requireAuth, asyncHandler(async (req, res) => {
+  const { workoutId, reactionType } = AddReactionSchema.parse(req.body);
+  const result = await squadService.addReaction(getUserId(req), workoutId, reactionType);
+  res.json(result);
+}));
+
+v1Router.delete('/squads/reactions', requireAuth, asyncHandler(async (req, res) => {
+  const { workoutId, reactionType } = AddReactionSchema.parse(req.body);
+  const result = await squadService.removeReaction(getUserId(req), workoutId, reactionType);
+  res.json(result);
+}));
+
+v1Router.get('/squads/workouts/:workoutId', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.getSquadWorkout(getUserId(req), req.params.workoutId as string);
+  res.json(result);
+}));
+
+v1Router.post('/squads/invites/:id', requireAuth, asyncHandler(async (req, res) => {
+  const { accept } = RespondInviteSchema.parse(req.body);
+  const result = await squadService.respondToInvite(getUserId(req), req.params.id as string, accept);
+  res.json(result);
+}));
+
+v1Router.get('/squads', requireAuth, asyncHandler(async (req, res) => {
+  const squads = await squadService.listUserSquads(getUserId(req));
+  res.json(squads);
+}));
+
+v1Router.post('/squads', requireAuth, asyncHandler(async (req, res) => {
+  const input = CreateSquadSchema.parse(req.body);
+  const squad = await squadService.create(getUserId(req), input);
+  res.json(squad);
+}));
+
+v1Router.get('/squads/:id/dashboard', requireAuth, asyncHandler(async (req, res) => {
+  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string);
+  res.json(dashboard);
+}));
+
+v1Router.post('/squads/:id/invite', requireAuth, asyncHandler(async (req, res) => {
+  const { userId } = InviteUserSchema.parse(req.body);
+  const result = await squadService.inviteUser(getUserId(req), req.params.id as string, userId);
+  res.json(result);
+}));
+
+v1Router.delete('/squads/:id/leave', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.leaveSquad(getUserId(req), req.params.id as string);
+  res.json(result);
 }));
 
 import { serveStatic } from './static.js';

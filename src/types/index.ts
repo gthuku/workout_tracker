@@ -148,6 +148,86 @@ export interface DashboardData {
   weeklyMuscleGroups: MuscleGroupVolume[];
 }
 
+// Squad types
+export type ReactionType = 'fire' | 'clap' | 'eyes';
+
+export interface Squad {
+  id: string;
+  name: string;
+  createdBy: string;
+  inviteCode: string;
+  role: string;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface SquadFeedItem {
+  userId: string;
+  displayName: string;
+  avatar: string | null;
+  status: 'done' | 'in_progress' | 'not_started';
+  activity: string;
+  workoutId: string | null;
+  reactions: { fire: number; clap: number; eyes: number };
+  hasUserReacted: { fire: boolean; clap: boolean; eyes: boolean };
+  timestamp: string;
+}
+
+export interface SquadDashboard {
+  squad: {
+    id: string;
+    name: string;
+    inviteCode: string;
+    createdBy: string;
+  };
+  dailyProgress: { completed: number; total: number; percentage: number };
+  feed: SquadFeedItem[];
+}
+
+export interface SquadInvite {
+  id: string;
+  squadId: string;
+  squadName: string;
+  invitedBy: string;
+  inviterName: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface SquadUserSearchResult {
+  id: string;
+  username: string;
+  displayName: string;
+  avatar: string | null;
+}
+
+export interface SquadWorkoutSet {
+  id: string;
+  workoutId: string;
+  exerciseId: string;
+  setNumber: number;
+  reps: number | null;
+  weight: number | null;
+  duration: number | null;
+  createdAt: string;
+  exerciseName: string;
+  primaryMuscles: MuscleGroup[];
+  equipment: string;
+}
+
+export interface SquadWorkout {
+  id: string;
+  userId: string;
+  ownerName: string;
+  name: string | null;
+  date: string;
+  duration: number | null;
+  notes: string | null;
+  isComplete: boolean;
+  createdAt: string;
+  sets: SquadWorkoutSet[];
+}
+
 export type PRTrendType = 'max_weight' | 'max_volume' | 'max_reps';
 
 export interface PRTrendPoint {

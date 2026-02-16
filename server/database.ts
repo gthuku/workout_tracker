@@ -146,6 +146,42 @@ const SCHEMA_SQL = `
     used INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
+
+  CREATE TABLE IF NOT EXISTS squads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    invite_code TEXT UNIQUE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS squad_members (
+    id TEXT PRIMARY KEY,
+    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('owner', 'member')),
+    joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(squad_id, user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS squad_invites (
+    id TEXT PRIMARY KEY,
+    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    invited_by TEXT NOT NULL REFERENCES users(id),
+    invited_user_id TEXT NOT NULL REFERENCES users(id),
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(squad_id, invited_user_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS squad_reactions (
+    id TEXT PRIMARY KEY,
+    workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+    reactor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    reaction_type TEXT NOT NULL CHECK (reaction_type IN ('fire', 'clap', 'eyes')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(workout_id, reactor_user_id, reaction_type)
+  );
 `;
 
 const INDEXES_SQL = `
@@ -155,6 +191,10 @@ const INDEXES_SQL = `
   CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
   CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type);
   CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_invites_user ON squad_invites(invited_user_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_reactions_workout ON squad_reactions(workout_id);
 `;
 
 // ============ INITIALIZE DATABASE ============

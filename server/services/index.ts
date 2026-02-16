@@ -3,3 +3,4 @@ export { userService } from './userService.js';
 export { workoutService } from './workoutService.js';
 export { exerciseService } from './exerciseService.js';
 export { statsService } from './statsService.js';
+export { squadService } from './squadService.js';

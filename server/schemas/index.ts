@@ -132,6 +132,34 @@ export const PRTrendsQuerySchema = z.object({
   weeks: z.coerce.number().min(1).max(104).default(52),
 });
 
+// Squad schemas
+export const ReactionTypeEnum = z.enum(['fire', 'clap', 'eyes']);
+
+export const CreateSquadSchema = z.object({
+  name: z.string().min(2).max(50),
+});
+
+export const InviteUserSchema = z.object({
+  userId: z.string(),
+});
+
+export const RespondInviteSchema = z.object({
+  accept: z.boolean(),
+});
+
+export const AddReactionSchema = z.object({
+  workoutId: z.string(),
+  reactionType: ReactionTypeEnum,
+});
+
+export const JoinSquadSchema = z.object({
+  code: z.string().min(6).max(6),
+});
+
+export const UserSearchSchema = z.object({
+  q: z.string().max(100).optional().default(''),
+});
+
 // Type exports
 export type RegisterInput = z.infer<typeof RegisterSchema>;
 export type LoginInput = z.infer<typeof LoginSchema>;
@@ -142,3 +170,5 @@ export type CreateWorkoutInput = z.infer<typeof CreateWorkoutSchema>;
 export type UpdateWorkoutInput = z.infer<typeof UpdateWorkoutSchema>;
 export type CreateSetInput = z.infer<typeof CreateSetSchema>;
 export type UpdateSetInput = z.infer<typeof UpdateSetSchema>;
+export type CreateSquadInput = z.infer<typeof CreateSquadSchema>;
+export type AddReactionInput = z.infer<typeof AddReactionSchema>;
