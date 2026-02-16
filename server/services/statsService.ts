@@ -207,8 +207,14 @@ export const statsService = {
 
     for (const row of data) {
       const muscles = JSON.parse(row.primary_muscles) as string[];
-      const volume = parseFloat(row.volume);
-      const sets = parseInt(row.sets);
+      if (!Array.isArray(muscles) || muscles.length === 0) {
+        continue;
+      }
+
+      const parsedVolume = Number.parseFloat(String(row.volume ?? '0'));
+      const parsedSets = Number.parseInt(String(row.sets ?? '0'), 10);
+      const volume = Number.isFinite(parsedVolume) ? parsedVolume : 0;
+      const sets = Number.isFinite(parsedSets) ? parsedSets : 0;
       const volumePerMuscle = volume / muscles.length;
       const setsPerMuscle = sets / muscles.length;
 

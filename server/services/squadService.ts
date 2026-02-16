@@ -133,11 +133,11 @@ export const squadService = {
          INNER JOIN (
            SELECT user_id, MAX(created_at) as max_created
            FROM workouts
-           WHERE DATE(date) = DATE($2)
+           WHERE DATE(date) = DATE($1)
            GROUP BY user_id
          ) w2 ON w1.user_id = w2.user_id AND w1.created_at = w2.max_created
        ) latest_w ON u.id = latest_w.user_id
-       WHERE sm.squad_id = $1
+       WHERE sm.squad_id = $2
        ORDER BY
          CASE
            WHEN latest_w.is_complete = 1 THEN 0
@@ -145,7 +145,7 @@ export const squadService = {
            ELSE 2
          END,
          latest_w.created_at DESC`,
-      [squadId, targetDate]
+      [targetDate, squadId]
     );
 
     // Get reaction counts for today's workouts
