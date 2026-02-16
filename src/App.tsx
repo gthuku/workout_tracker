@@ -14,6 +14,8 @@ const WorkoutHistory = lazy(() => import('./pages/WorkoutHistory').then(m => ({ 
 const WorkoutDetail = lazy(() => import('./pages/WorkoutDetail').then(m => ({ default: m.WorkoutDetail })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const RecentPRs = lazy(() => import('./pages/RecentPRs').then(m => ({ default: m.RecentPRs })));
+const Squad = lazy(() => import('./pages/Squad').then(m => ({ default: m.Squad })));
+const SquadWorkoutDetail = lazy(() => import('./pages/SquadWorkoutDetail').then(m => ({ default: m.SquadWorkoutDetail })));
 
 // Loading fallback component
 function PageLoader() {
@@ -60,6 +62,8 @@ function App() {
             <Route path="/history/:workoutId" element={<WorkoutDetail />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/recent-prs" element={<RecentPRs />} />
+            <Route path="/squad" element={<Squad />} />
+            <Route path="/squad/workout/:workoutId" element={<SquadWorkoutDetail />} />
           </Route>
         </Routes>
       </Suspense>

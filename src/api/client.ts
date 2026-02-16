@@ -12,6 +12,12 @@ import type {
   UserProfile,
   PRTrends,
   PRTrendType,
+  Squad,
+  SquadDashboard,
+  SquadInvite,
+  SquadUserSearchResult,
+  ReactionType,
+  SquadWorkout,
 } from '../types';
 
 // Raw API response types (snake_case from server)
@@ -349,4 +355,53 @@ export const dashboardApi = {
     fetchJson<{ muscleGroups: MuscleGroupVolume[]; imbalances: { warning: string; muscleGroup1: string; muscleGroup2: string }[] }>(
       `/api/stats/muscle-groups?period=${period}`
     ),
+};
+
+// Squad API
+export const squadApi = {
+  list: () => fetchJson<Squad[]>('/api/squads'),
+  create: (name: string) =>
+    fetchJson<Squad>('/api/squads', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  getDashboard: (squadId: string) =>
+    fetchJson<SquadDashboard>(`/api/squads/${squadId}/dashboard`),
+  getWorkout: (workoutId: string) =>
+    fetchJson<SquadWorkout>(`/api/squads/workouts/${workoutId}`),
+  leave: (squadId: string) =>
+    fetchJson<{ success: boolean; deleted: boolean }>(`/api/squads/${squadId}/leave`, {
+      method: 'DELETE',
+    }),
+  inviteUser: (squadId: string, userId: string) =>
+    fetchJson<{ id: string; squadId: string; invitedUserId: string; status: string }>(
+      `/api/squads/${squadId}/invite`,
+      { method: 'POST', body: JSON.stringify({ userId }) }
+    ),
+  joinByCode: (code: string) =>
+    fetchJson<{ id: string; name: string; inviteCode: string }>('/api/squads/join', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+  listInvites: () => fetchJson<SquadInvite[]>('/api/squads/invites'),
+  respondToInvite: (inviteId: string, accept: boolean) =>
+    fetchJson<{ success: boolean; accepted: boolean }>(`/api/squads/invites/${inviteId}`, {
+      method: 'POST',
+      body: JSON.stringify({ accept }),
+    }),
+  addReaction: (workoutId: string, reactionType: ReactionType) =>
+    fetchJson<{ success: boolean }>('/api/squads/reactions', {
+      method: 'POST',
+      body: JSON.stringify({ workoutId, reactionType }),
+    }),
+  removeReaction: (workoutId: string, reactionType: ReactionType) =>
+    fetchJson<{ success: boolean }>('/api/squads/reactions', {
+      method: 'DELETE',
+      body: JSON.stringify({ workoutId, reactionType }),
+    }),
+  searchUsers: (query: string, excludeSquadId?: string) => {
+    const params = new URLSearchParams({ q: query });
+    if (excludeSquadId) params.set('excludeSquadId', excludeSquadId);
+    return fetchJson<SquadUserSearchResult[]>(`/api/squads/users/search?${params}`);
+  },
 };
