@@ -41,6 +41,10 @@ export const UpdateEmailSchema = z.object({
   email: z.string().email().max(100).nullable().optional(),
 });
 
+export const UpdateUsernameSchema = z.object({
+  username: z.string().trim().min(2).max(50),
+});
+
 // User schemas
 export const CreateProfileSchema = z.object({
   username: z.string().min(2).max(50),
@@ -158,6 +162,22 @@ export const JoinSquadSchema = z.object({
 
 export const UserSearchSchema = z.object({
   q: z.string().max(100).optional().default(''),
+});
+
+function isValidIanaTimezone(value: string): boolean {
+  try {
+    Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export const SquadDashboardQuerySchema = z.object({
+  timezone: z.string().max(100).optional().refine(
+    (value) => value === undefined || isValidIanaTimezone(value),
+    { message: 'Invalid timezone' }
+  ),
 });
 
 // Type exports

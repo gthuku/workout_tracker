@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useOutletContext } from 'react-router-dom';
-import { ChevronLeft, Save, User as UserIcon, Target, Ruler, Scale, Calendar, LogOut, Camera } from 'lucide-react';
-import { userApi } from '../api/client';
+import { ChevronLeft, Save, User as UserIcon, Target, Ruler, Scale, Calendar, LogOut, Camera, Mail, Lock, AtSign } from 'lucide-react';
+import { authApi, userApi } from '../api/client';
 import type { ExperienceLevel, WeightUnit, Gender } from '../types';
 
 interface LayoutContext {
@@ -33,6 +33,10 @@ export function Profile() {
 
   // Form state
   const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [initialUsername, setInitialUsername] = useState('');
+  const [initialEmail, setInitialEmail] = useState('');
   const [age, setAge] = useState<number | ''>('');
   const [heightFeet, setHeightFeet] = useState<number | ''>('');
   const [heightInches, setHeightInches] = useState<number | ''>('');
@@ -43,6 +47,15 @@ export function Profile() {
   const [bio, setBio] = useState('');
   const [preferredUnit, setPreferredUnit] = useState<WeightUnit>('lbs');
   const [avatar, setAvatar] = useState<string | null>(null);
+  const [accountSaving, setAccountSaving] = useState(false);
+  const [accountMessage, setAccountMessage] = useState<string | null>(null);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordSaving, setPasswordSaving] = useState(false);
+  const [passwordMessage, setPasswordMessage] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -52,6 +65,10 @@ export function Profile() {
   const loadUser = async () => {
     try {
       const userData = await userApi.get();
+      setUsername(userData.username || '');
+      setEmail(userData.email || '');
+      setInitialUsername(userData.username || '');
+      setInitialEmail(userData.email || '');
       setDisplayName(userData.displayName || '');
       setAge(userData.age || '');
       setHeightFeet(userData.heightFeet || '');
@@ -120,6 +137,80 @@ export function Profile() {
     reader.readAsDataURL(file);
   };
 
+  const handleAccountSave = async () => {
+    setAccountSaving(true);
+    setAccountMessage(null);
+    setAccountError(null);
+
+    try {
+      const trimmedUsername = username.trim();
+      const trimmedEmail = email.trim();
+      const normalizedInitialEmail = initialEmail.trim();
+
+      if (trimmedUsername.length < 2) {
+        throw new Error('Username must be at least 2 characters');
+      }
+
+      const targetEmail = trimmedEmail.length > 0 ? trimmedEmail : null;
+      const currentEmail = normalizedInitialEmail.length > 0 ? normalizedInitialEmail : null;
+
+      let hasChanges = false;
+
+      if (trimmedUsername !== initialUsername) {
+        await authApi.updateUsername(trimmedUsername);
+        setInitialUsername(trimmedUsername);
+        hasChanges = true;
+      }
+
+      if (targetEmail !== currentEmail) {
+        await authApi.updateEmail(targetEmail);
+        setInitialEmail(targetEmail || '');
+        hasChanges = true;
+      }
+
+      if (!hasChanges) {
+        setAccountMessage('No account changes to save.');
+        return;
+      }
+
+      setUsername(trimmedUsername);
+      setEmail(targetEmail || '');
+      setAccountMessage('Account settings updated.');
+    } catch (error) {
+      setAccountError((error as Error).message);
+    } finally {
+      setAccountSaving(false);
+    }
+  };
+
+  const handlePasswordChange = async () => {
+    setPasswordSaving(true);
+    setPasswordMessage(null);
+    setPasswordError(null);
+
+    try {
+      if (!currentPassword.trim()) {
+        throw new Error('Current password is required');
+      }
+      if (newPassword.length < 6) {
+        throw new Error('New password must be at least 6 characters');
+      }
+      if (newPassword !== confirmPassword) {
+        throw new Error('New passwords do not match');
+      }
+
+      await authApi.changePassword(currentPassword, newPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      setPasswordMessage('Password updated successfully.');
+    } catch (error) {
+      setPasswordError((error as Error).message);
+    } finally {
+      setPasswordSaving(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -180,7 +271,53 @@ export function Profile() {
           )}
         </div>
 
-        {/* Basic Info */}
+        {/* Account */}
+        <div className="card">
+          <h2 className="font-semibold mb-4 flex items-center gap-2">
+            <AtSign size={18} className="text-slate-400" />
+            Account
+          </h2>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Username</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Username"
+                className="input w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1 flex items-center gap-1">
+                <Mail size={14} />
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="name@example.com"
+                className="input w-full"
+              />
+            </div>
+
+            {accountMessage && <p className="text-sm text-green-400">{accountMessage}</p>}
+            {accountError && <p className="text-sm text-red-400">{accountError}</p>}
+
+            <button
+              type="button"
+              onClick={handleAccountSave}
+              disabled={accountSaving}
+              className="btn btn-secondary w-full"
+            >
+              {accountSaving ? 'Saving account...' : 'Save Account'}
+            </button>
+          </div>
+        </div>
+
         <div className="card">
           <h2 className="font-semibold mb-4 flex items-center gap-2">
             <UserIcon size={18} className="text-slate-400" />
@@ -394,6 +531,60 @@ export function Profile() {
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+
+        <div className="card">
+          <h2 className="font-semibold mb-4 flex items-center gap-2">
+            <Lock size={18} className="text-slate-400" />
+            Password
+          </h2>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Current Password</label>
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                placeholder="Current password"
+                className="input w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">New Password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="At least 6 characters"
+                className="input w-full"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm text-slate-400 mb-1">Confirm New Password</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter new password"
+                className="input w-full"
+              />
+            </div>
+
+            {passwordMessage && <p className="text-sm text-green-400">{passwordMessage}</p>}
+            {passwordError && <p className="text-sm text-red-400">{passwordError}</p>}
+
+            <button
+              type="button"
+              onClick={handlePasswordChange}
+              disabled={passwordSaving}
+              className="btn btn-secondary w-full"
+            >
+              {passwordSaving ? 'Updating password...' : 'Update Password'}
+            </button>
           </div>
         </div>
 

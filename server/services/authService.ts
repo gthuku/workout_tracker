@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
 import { UnauthorizedError, NotFoundError, ConflictError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
+import { sendPasswordResetEmail } from '../utils/mailer.js';
 import type { RegisterInput, LoginInput } from '../schemas/index.js';
 
 const SALT_ROUNDS = 10;
@@ -185,7 +186,7 @@ export const authService = {
 
     if (!user) {
       logger.debug({ username }, 'Reset requested for non-existent user');
-      return { success: true, message: 'If an account exists, a reset token has been generated' };
+      return { success: true, message: 'If an account exists, reset instructions have been sent' };
     }
 
     const resetToken = this.generateResetToken();
@@ -201,11 +202,37 @@ export const authService = {
 
     logger.info({ userId: user.id }, 'Password reset token generated');
 
-    return {
-      success: true,
-      message: 'If an account exists, a reset token has been generated',
-      ...(shouldExposeResetToken() && { resetToken, expiresIn: `${RESET_TOKEN_EXPIRES_HOURS} hour(s)` }),
-    };
+    const exposeToken = shouldExposeResetToken();
+
+    // Development (or explicitly enabled): return token directly to client.
+    if (exposeToken) {
+      return {
+        success: true,
+        message: 'If an account exists, reset instructions have been sent',
+        resetToken,
+        expiresIn: `${RESET_TOKEN_EXPIRES_HOURS} hour(s)`,
+      };
+    }
+
+    // Production: deliver via email (do not expose token).
+    if (!user.email) {
+      logger.warn({ userId: user.id }, 'Password reset requested but user has no email on file');
+      return { success: true, message: 'If an account exists, reset instructions have been sent' };
+    }
+
+    try {
+      await sendPasswordResetEmail({
+        to: user.email,
+        username: user.username,
+        resetToken,
+        expiresInHours: RESET_TOKEN_EXPIRES_HOURS,
+      });
+    } catch (error) {
+      // Avoid leaking whether the user exists; log internally.
+      logger.error({ userId: user.id, err: error }, 'Failed to send password reset email');
+    }
+
+    return { success: true, message: 'If an account exists, reset instructions have been sent' };
   },
 
   async resetPassword(token: string, newPassword: string) {
@@ -285,6 +312,27 @@ export const authService = {
     logger.info({ userId }, 'Email updated');
 
     return { success: true };
+  },
+
+  async updateUsername(userId: string, username: string) {
+    const normalizedUsername = username.trim();
+    const existing = await db.queryOne(
+      'SELECT id FROM users WHERE lower(username) = lower($1) AND id != $2',
+      [normalizedUsername, userId]
+    );
+    if (existing) {
+      throw new ConflictError('Username already exists');
+    }
+
+    await db.execute('UPDATE users SET username = $1 WHERE id = $2', [normalizedUsername, userId]);
+    const user = await db.queryOne<DbUser>('SELECT * FROM users WHERE id = $1', [userId]);
+    if (!user) {
+      throw new NotFoundError('User');
+    }
+
+    const token = this.generateToken(user.id, user.username);
+    logger.info({ userId, username: user.username }, 'Username updated');
+    return { success: true, token };
   },
 };
 

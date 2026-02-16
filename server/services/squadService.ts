@@ -51,6 +51,25 @@ interface DbUserReaction {
   reaction_type: string;
 }
 
+function getDateInTimezone(timezone?: string): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone || 'UTC',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+
+  if (!year || !month || !day) {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  return `${year}-${month}-${day}`;
+}
+
 function generateInviteCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -81,7 +100,7 @@ export const squadService = {
     }));
   },
 
-  async getSquadDashboard(userId: string, squadId: string) {
+  async getSquadDashboard(userId: string, squadId: string, timezone?: string) {
     // Verify user is a member
     const membership = await db.queryOne<DbSquadMember>(
       'SELECT * FROM squad_members WHERE squad_id = $1 AND user_id = $2',
@@ -95,6 +114,7 @@ export const squadService = {
     if (!squad) throw new NotFoundError('Squad not found');
 
     // Get members with their latest workout today
+    const targetDate = getDateInTimezone(timezone);
     const members = await db.query<DbMemberWithWorkout>(
       `SELECT
         u.id as user_id,
@@ -113,7 +133,7 @@ export const squadService = {
          INNER JOIN (
            SELECT user_id, MAX(created_at) as max_created
            FROM workouts
-           WHERE DATE(date) = DATE('now', 'localtime')
+           WHERE DATE(date) = DATE($2)
            GROUP BY user_id
          ) w2 ON w1.user_id = w2.user_id AND w1.created_at = w2.max_created
        ) latest_w ON u.id = latest_w.user_id
@@ -125,7 +145,7 @@ export const squadService = {
            ELSE 2
          END,
          latest_w.created_at DESC`,
-      [squadId]
+      [squadId, targetDate]
     );
 
     // Get reaction counts for today's workouts

@@ -17,6 +17,7 @@ import {
   RequestResetSchema,
   ResetPasswordSchema,
   UpdateEmailSchema,
+  UpdateUsernameSchema,
   CreateProfileSchema,
   UpdateUserSchema,
   UpdateProfileSchema,
@@ -37,6 +38,7 @@ import {
   AddReactionSchema,
   JoinSquadSchema,
   UserSearchSchema,
+  SquadDashboardQuerySchema,
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
@@ -302,6 +304,12 @@ v1Router.patch('/auth/email', requireAuth, asyncHandler(async (req, res) => {
   res.json(result);
 }));
 
+v1Router.patch('/auth/username', requireAuth, asyncHandler(async (req, res) => {
+  const { username } = UpdateUsernameSchema.parse(req.body);
+  const result = await authService.updateUsername(getUserId(req), username);
+  res.json(result);
+}));
+
 v1Router.post('/auth/change-password', requireAuth, asyncHandler(async (req, res) => {
   const { currentPassword, newPassword } = ChangePasswordSchema.parse(req.body);
   const result = await authService.changePassword(getUserId(req), currentPassword, newPassword);
@@ -490,7 +498,8 @@ v1Router.post('/squads', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 v1Router.get('/squads/:id/dashboard', requireAuth, asyncHandler(async (req, res) => {
-  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string);
+  const { timezone } = SquadDashboardQuerySchema.parse(req.query);
+  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string, timezone);
   res.json(dashboard);
 }));
 

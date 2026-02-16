@@ -28,6 +28,7 @@ function formatUser(user: DbUser) {
   return {
     id: user.id,
     username: user.username,
+    email: user.email,
     preferredUnit: user.preferred_unit,
     displayName: user.display_name,
     age: user.age,
