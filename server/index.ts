@@ -8,7 +8,7 @@ import logger from './utils/logger.js';
 import cache from './utils/cache.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { errorHandler, asyncHandler, UnauthorizedError, ForbiddenError } from './middleware/errorHandler.js';
-import { authService, userService, workoutService, exerciseService, statsService, squadService } from './services/index.js';
+import { authService, userService, workoutService, exerciseService, statsService, squadService, progressService } from './services/index.js';
 import {
   RegisterSchema,
   LoginSchema,
@@ -32,6 +32,8 @@ import {
   MuscleGroupsQuerySchema,
   PaginationSchema,
   PRTrendsQuerySchema,
+  CreateProgressCheckinSchema,
+  ProgressCheckinQuerySchema,
   CreateSquadSchema,
   InviteUserSchema,
   RespondInviteSchema,
@@ -39,6 +41,7 @@ import {
   JoinSquadSchema,
   UserSearchSchema,
   SquadDashboardQuerySchema,
+  CreateChallengeSchema,
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
@@ -444,6 +447,18 @@ v1Router.get('/personal-records', requireAuth, asyncHandler(async (req, res) => 
   res.json(prs);
 }));
 
+v1Router.get('/progress-checkins', requireAuth, asyncHandler(async (req, res) => {
+  ProgressCheckinQuerySchema.parse(req.query);
+  const checkins = await progressService.list(getUserId(req));
+  res.json(checkins);
+}));
+
+v1Router.post('/progress-checkins', requireAuth, asyncHandler(async (req, res) => {
+  const input = CreateProgressCheckinSchema.parse(req.body);
+  const checkin = await progressService.create(getUserId(req), input);
+  res.status(201).json(checkin);
+}));
+
 // --- Squads ---
 v1Router.get('/squads/invites', requireAuth, asyncHandler(async (req, res) => {
   const invites = await squadService.listInvites(getUserId(req));
@@ -475,6 +490,16 @@ v1Router.delete('/squads/reactions', requireAuth, asyncHandler(async (req, res) 
   res.json(result);
 }));
 
+v1Router.post('/squads/challenges/:id/complete', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.completeChallenge(getUserId(req), req.params.id as string);
+  res.json(result);
+}));
+
+v1Router.delete('/squads/challenges/:id', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.deleteChallenge(getUserId(req), req.params.id as string);
+  res.json(result);
+}));
+
 v1Router.get('/squads/workouts/:workoutId', requireAuth, asyncHandler(async (req, res) => {
   const result = await squadService.getSquadWorkout(getUserId(req), req.params.workoutId as string);
   res.json(result);
@@ -498,9 +523,15 @@ v1Router.post('/squads', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 v1Router.get('/squads/:id/dashboard', requireAuth, asyncHandler(async (req, res) => {
-  const { timezone } = SquadDashboardQuerySchema.parse(req.query);
-  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string, timezone);
+  const { timezone, period } = SquadDashboardQuerySchema.parse(req.query);
+  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string, timezone, period);
   res.json(dashboard);
+}));
+
+v1Router.post('/squads/:id/challenges', requireAuth, asyncHandler(async (req, res) => {
+  const input = CreateChallengeSchema.parse(req.body);
+  const result = await squadService.createChallenge(getUserId(req), req.params.id as string, input);
+  res.status(201).json(result);
 }));
 
 v1Router.post('/squads/:id/invite', requireAuth, asyncHandler(async (req, res) => {

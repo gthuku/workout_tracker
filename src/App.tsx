@@ -14,6 +14,7 @@ const WorkoutHistory = lazy(() => import('./pages/WorkoutHistory').then(m => ({ 
 const WorkoutDetail = lazy(() => import('./pages/WorkoutDetail').then(m => ({ default: m.WorkoutDetail })));
 const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
 const RecentPRs = lazy(() => import('./pages/RecentPRs').then(m => ({ default: m.RecentPRs })));
+const ProgressTracker = lazy(() => import('./pages/ProgressTracker').then(m => ({ default: m.ProgressTracker })));
 const Squad = lazy(() => import('./pages/Squad').then(m => ({ default: m.Squad })));
 const SquadWorkoutDetail = lazy(() => import('./pages/SquadWorkoutDetail').then(m => ({ default: m.SquadWorkoutDetail })));
 
@@ -31,6 +32,11 @@ function PageLoader() {
 
 function App() {
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    // Allow password reset links to work even if a profile is already selected in localStorage.
+    if (params.get('resetToken') || params.get('token')) {
+      return null;
+    }
     return localStorage.getItem('selectedProfileId');
   });
 
@@ -62,6 +68,7 @@ function App() {
             <Route path="/history/:workoutId" element={<WorkoutDetail />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/recent-prs" element={<RecentPRs />} />
+            <Route path="/progress-tracker" element={<ProgressTracker />} />
             <Route path="/squad" element={<Squad />} />
             <Route path="/squad/workout/:workoutId" element={<SquadWorkoutDetail />} />
           </Route>

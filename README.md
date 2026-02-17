@@ -327,6 +327,14 @@ DATABASE_PATH=/path/to/custom/workout.db
 # Server
 PORT=3001
 NODE_ENV=production
+
+# Password Reset Email (production)
+# Uses AWS SES via the AWS CLI on the server. Requires:
+# - A verified SES identity for AUTH_EMAIL_FROM
+# - Instance IAM permission to call ses:SendEmail
+AUTH_EMAIL_FROM=no-reply@yourdomain.com
+AUTH_SES_REGION=us-east-1
+FRONTEND_URL=https://wrkoutlog.fit
 ```
 
 ## 🔒 Security Features

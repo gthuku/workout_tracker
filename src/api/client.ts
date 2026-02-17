@@ -18,6 +18,7 @@ import type {
   SquadUserSearchResult,
   ReactionType,
   SquadWorkout,
+  ProgressCheckin,
 } from '../types';
 
 // Raw API response types (snake_case from server)
@@ -377,6 +378,19 @@ export const dashboardApi = {
     ),
 };
 
+// Progress Check-in API
+export const progressApi = {
+  list: () => fetchJson<ProgressCheckin[]>('/api/progress-checkins'),
+  create: (data: { photos: string[]; weight: number; waist?: number; note?: string }) =>
+    fetchJson<ProgressCheckin>('/api/progress-checkins', {
+      method: 'POST',
+      body: JSON.stringify({
+        ...data,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    }),
+};
+
 // Squad API
 export const squadApi = {
   list: () => fetchJson<Squad[]>('/api/squads'),
@@ -385,12 +399,11 @@ export const squadApi = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
-  getDashboard: (squadId: string) => {
+  getDashboard: (squadId: string, period?: 'today' | 'week') => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const params = new URLSearchParams();
-    if (timezone) {
-      params.set('timezone', timezone);
-    }
+    if (timezone) params.set('timezone', timezone);
+    if (period) params.set('period', period);
     const query = params.toString();
     return fetchJson<SquadDashboard>(`/api/squads/${squadId}/dashboard${query ? `?${query}` : ''}`);
   },
@@ -431,4 +444,17 @@ export const squadApi = {
     if (excludeSquadId) params.set('excludeSquadId', excludeSquadId);
     return fetchJson<SquadUserSearchResult[]>(`/api/squads/users/search?${params}`);
   },
+  createChallenge: (squadId: string, data: { exerciseId: string; targetSets: number; targetReps: number; targetWeight?: number; deadline: string }) =>
+    fetchJson<{ id: string }>(`/api/squads/${squadId}/challenges`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  completeChallenge: (challengeId: string) =>
+    fetchJson<{ success: boolean }>(`/api/squads/challenges/${challengeId}/complete`, {
+      method: 'POST',
+    }),
+  deleteChallenge: (challengeId: string) =>
+    fetchJson<{ success: boolean }>(`/api/squads/challenges/${challengeId}`, {
+      method: 'DELETE',
+    }),
 };

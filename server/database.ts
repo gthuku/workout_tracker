@@ -147,6 +147,20 @@ const SCHEMA_SQL = `
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 
+  CREATE TABLE IF NOT EXISTS progress_checkins (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    checkin_date TEXT NOT NULL,
+    week_start_date TEXT NOT NULL,
+    weight REAL NOT NULL CHECK (weight > 0),
+    waist REAL CHECK (waist IS NULL OR waist > 0),
+    note TEXT,
+    photos TEXT NOT NULL,
+    is_private INTEGER NOT NULL DEFAULT 1 CHECK (is_private IN (0, 1)),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, week_start_date)
+  );
+
   CREATE TABLE IF NOT EXISTS squads (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -182,6 +196,27 @@ const SCHEMA_SQL = `
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(workout_id, reactor_user_id, reaction_type)
   );
+
+  CREATE TABLE IF NOT EXISTS squad_challenges (
+    id TEXT PRIMARY KEY,
+    squad_id TEXT NOT NULL REFERENCES squads(id) ON DELETE CASCADE,
+    created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    exercise_id TEXT NOT NULL REFERENCES exercises(id),
+    target_sets INTEGER NOT NULL,
+    target_reps INTEGER NOT NULL,
+    target_weight REAL,
+    deadline TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'expired')),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS squad_challenge_completions (
+    id TEXT PRIMARY KEY,
+    challenge_id TEXT NOT NULL REFERENCES squad_challenges(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    completed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(challenge_id, user_id)
+  );
 `;
 
 const INDEXES_SQL = `
@@ -191,10 +226,13 @@ const INDEXES_SQL = `
   CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
   CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type);
   CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_progress_checkins_user_date ON progress_checkins(user_id, checkin_date DESC);
   CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id);
   CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_squad_invites_user ON squad_invites(invited_user_id);
   CREATE INDEX IF NOT EXISTS idx_squad_reactions_workout ON squad_reactions(workout_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_challenges_squad ON squad_challenges(squad_id);
+  CREATE INDEX IF NOT EXISTS idx_squad_challenge_completions_challenge ON squad_challenge_completions(challenge_id);
 `;
 
 // ============ INITIALIZE DATABASE ============

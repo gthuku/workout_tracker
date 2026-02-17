@@ -149,6 +149,19 @@ export interface DashboardData {
   weeklyMuscleGroups: MuscleGroupVolume[];
 }
 
+export interface ProgressCheckin {
+  id: string;
+  userId: string;
+  checkinDate: string;
+  weekStartDate: string;
+  weight: number;
+  waist: number | null;
+  note: string | null;
+  photos: string[];
+  isPrivate: boolean;
+  createdAt: string;
+}
+
 // Squad types
 export type ReactionType = 'fire' | 'clap' | 'eyes';
 
@@ -169,9 +182,29 @@ export interface SquadFeedItem {
   status: 'done' | 'in_progress' | 'not_started';
   activity: string;
   workoutId: string | null;
+  workoutCount?: number;
+  totalVolume?: number;
   reactions: { fire: number; clap: number; eyes: number };
   hasUserReacted: { fire: boolean; clap: boolean; eyes: boolean };
   timestamp: string;
+}
+
+export interface SquadChallenge {
+  id: string;
+  squadId: string;
+  createdBy: string;
+  creatorName: string;
+  exerciseId: string;
+  exerciseName: string;
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number | null;
+  deadline: string;
+  status: 'active' | 'expired';
+  completions: { userId: string; displayName: string; avatar: string | null; completedAt: string }[];
+  hasUserCompleted: boolean;
+  totalMembers: number;
+  createdAt: string;
 }
 
 export interface SquadDashboard {
@@ -183,6 +216,7 @@ export interface SquadDashboard {
   };
   dailyProgress: { completed: number; total: number; percentage: number };
   feed: SquadFeedItem[];
+  challenges?: SquadChallenge[];
 }
 
 export interface SquadInvite {

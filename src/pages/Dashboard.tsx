@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList } from 'lucide-react';
+import { Flame, Dumbbell, Trophy, Play, Calendar, ChevronRight, ClipboardList, Camera, Lock } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from 'recharts';
-import { dashboardApi } from '../api/client';
-import type { DashboardData } from '../types';
+import { dashboardApi, progressApi } from '../api/client';
+import type { DashboardData, ProgressCheckin } from '../types';
 import { format, parseISO } from 'date-fns';
 import { useWorkoutStore } from '../store/workoutStore';
 
@@ -21,23 +21,45 @@ const MUSCLE_GROUP_COLORS: Record<string, string> = {
   Cardio: '#14b8a6',
 };
 
+function sortCheckinsDesc(a: ProgressCheckin, b: ProgressCheckin): number {
+  if (a.checkinDate !== b.checkinDate) {
+    return b.checkinDate.localeCompare(a.checkinDate);
+  }
+  return b.createdAt.localeCompare(a.createdAt);
+}
+
+function getCurrentWeekStartLocal(): string {
+  const today = new Date();
+  const weekday = today.getDay();
+  const delta = weekday === 0 ? -6 : 1 - weekday;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() + delta);
+  monday.setHours(0, 0, 0, 0);
+  return format(monday, 'yyyy-MM-dd');
+}
+
 export function Dashboard() {
   const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [startingWorkout, setStartingWorkout] = useState(false);
+  const [progressCheckins, setProgressCheckins] = useState<ProgressCheckin[]>([]);
   const { activeWorkout, resumeWorkout, startWorkout, error, clearError } = useWorkoutStore();
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [dashboard] = await Promise.all([
+        const [dashboard, checkins] = await Promise.all([
           dashboardApi.get(),
-          resumeWorkout(),
+          progressApi.list().catch(() => []),
         ]);
+        await resumeWorkout().catch((resumeError) => {
+          console.error('Failed to resume active workout:', resumeError);
+        });
         setData(dashboard);
-      } catch (error) {
-        console.error('Failed to load dashboard:', error);
+        setProgressCheckins(checkins.sort(sortCheckinsDesc));
+      } catch (loadError) {
+        console.error('Failed to load dashboard:', loadError);
       } finally {
         setLoading(false);
       }
@@ -45,13 +67,17 @@ export function Dashboard() {
     loadData();
   }, [resumeWorkout]);
 
+  const latestCheckin = progressCheckins[0] ?? null;
+  const thisWeekStart = getCurrentWeekStartLocal();
+  const hasThisWeekCheckin = progressCheckins.some((checkin) => checkin.weekStartDate === thisWeekStart);
+
   const handleStartWorkout = async () => {
     setStartingWorkout(true);
     try {
       await startWorkout();
       navigate('/workout');
-    } catch (error) {
-      console.error('Failed to start workout:', error);
+    } catch (startError) {
+      console.error('Failed to start workout:', startError);
     } finally {
       setStartingWorkout(false);
     }
@@ -67,7 +93,6 @@ export function Dashboard() {
 
   return (
     <div className="p-4 max-w-lg mx-auto space-y-6 page-transition">
-      {/* Header */}
       <div className="pt-4">
         <p className="text-sm text-zinc-500 font-medium">Welcome back</p>
         <h1 className="text-3xl font-bold tracking-tight">
@@ -75,7 +100,6 @@ export function Dashboard() {
         </h1>
       </div>
 
-      {/* Error Display */}
       {error && (
         <div className="card border-red-500/30 bg-red-500/10">
           <div className="flex items-center gap-2 text-red-400">
@@ -90,7 +114,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Stats Row */}
       <div className="grid grid-cols-2 gap-4">
         <div className="card group hover:border-orange-500/30">
           <div className="flex items-center gap-3">
@@ -117,7 +140,6 @@ export function Dashboard() {
         </div>
       </div>
 
-      {/* Start Workout Button */}
       {activeWorkout ? (
         <button
           onClick={() => navigate('/workout')}
@@ -150,7 +172,45 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Recent PRs */}
+      <div className="card">
+        <button
+          onClick={() => navigate('/progress-tracker')}
+          className="flex items-center justify-between w-full group"
+        >
+          <div className="text-left">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="p-2 bg-gradient-to-br from-cyan-500/20 to-blue-500/20 rounded-lg">
+                <Camera className="text-cyan-400" size={16} />
+              </div>
+              <h2 className="font-semibold">Progress Tracker</h2>
+              <span className="text-xs text-zinc-400 flex items-center gap-1">
+                <Lock size={12} />
+                Private
+              </span>
+            </div>
+            {latestCheckin ? (
+              <>
+                <p className="text-sm text-zinc-300">
+                  Latest: {format(parseISO(latestCheckin.checkinDate), 'MMM d, yyyy')} at {latestCheckin.weight.toFixed(1)} lbs
+                </p>
+                <p className="text-xs text-zinc-500">
+                  {hasThisWeekCheckin ? 'Weekly check-in done.' : 'Weekly check-in pending.'} {progressCheckins.length} total entries.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-zinc-300">Track photos, weekly weight, timeline, compare view, and trend chart.</p>
+                <p className="text-xs text-zinc-500">No check-ins yet. Start your first one.</p>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-1 text-blue-400 group-hover:text-blue-300 transition-colors ml-4">
+            <span className="text-sm font-medium">Open</span>
+            <ChevronRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+          </div>
+        </button>
+      </div>
+
       {data?.recentPRs && data.recentPRs.length > 0 && (
         <div className="card">
           <button
@@ -196,7 +256,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Weekly Muscle Groups */}
       {data?.weeklyMuscleGroups && data.weeklyMuscleGroups.length > 0 && (
         <div className="card">
           <h2 className="font-semibold mb-4">This Week&apos;s Focus</h2>
@@ -229,7 +288,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Recent Workouts */}
       {data?.recentWorkouts && data.recentWorkouts.length > 0 && (
         <div className="card">
           <button
@@ -272,7 +330,6 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Empty State */}
       {(!data?.recentWorkouts || data.recentWorkouts.length === 0) && (
         <div className="card text-center py-12">
           <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-zinc-800 to-zinc-900 rounded-2xl flex items-center justify-center">

@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { db } from '../database.js';
 import { NotFoundError, ForbiddenError, ConflictError } from '../middleware/errorHandler.js';
 import logger from '../utils/logger.js';
-import type { CreateSquadInput } from '../schemas/index.js';
+import type { CreateSquadInput, CreateChallengeInput } from '../schemas/index.js';
 
 interface DbSquad {
   id: string;
@@ -100,7 +100,7 @@ export const squadService = {
     }));
   },
 
-  async getSquadDashboard(userId: string, squadId: string, timezone?: string) {
+  async getSquadDashboard(userId: string, squadId: string, timezone?: string, period: 'today' | 'week' = 'today') {
     // Verify user is a member
     const membership = await db.queryOne<DbSquadMember>(
       'SELECT * FROM squad_members WHERE squad_id = $1 AND user_id = $2',
@@ -113,8 +113,85 @@ export const squadService = {
     const squad = await db.queryOne<DbSquad>('SELECT * FROM squads WHERE id = $1', [squadId]);
     if (!squad) throw new NotFoundError('Squad not found');
 
-    // Get members with their latest workout today
     const targetDate = getDateInTimezone(timezone);
+
+    // Compute start date for period
+    let startDate: string;
+    if (period === 'week') {
+      // Get Monday of current week
+      const d = new Date(targetDate + 'T00:00:00');
+      const day = d.getDay();
+      const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+      const monday = new Date(d);
+      monday.setDate(diff);
+      startDate = monday.toISOString().split('T')[0];
+    } else {
+      startDate = targetDate;
+    }
+
+    if (period === 'week') {
+      // Weekly view: show workout count + total volume per member
+      const members = await db.query<{
+        user_id: string; display_name: string; avatar: string | null;
+        workout_count: number; total_volume: number; has_completed: number;
+      }>(
+        `SELECT
+          u.id as user_id,
+          COALESCE(u.display_name, u.username) as display_name,
+          u.avatar,
+          COUNT(DISTINCT CASE WHEN w.is_complete = 1 THEN w.id END) as workout_count,
+          COALESCE(SUM(CASE WHEN w.is_complete = 1 THEN ws.reps * ws.weight ELSE 0 END), 0) as total_volume,
+          CASE WHEN COUNT(DISTINCT CASE WHEN w.is_complete = 1 THEN w.id END) > 0 THEN 1 ELSE 0 END as has_completed
+         FROM squad_members sm
+         JOIN users u ON sm.user_id = u.id
+         LEFT JOIN workouts w ON u.id = w.user_id AND DATE(w.date) >= DATE($1) AND DATE(w.date) <= DATE($2)
+         LEFT JOIN workout_sets ws ON w.id = ws.workout_id
+         WHERE sm.squad_id = $3
+         GROUP BY u.id, u.display_name, u.username, u.avatar
+         ORDER BY workout_count DESC, total_volume DESC`,
+        [startDate, targetDate, squadId]
+      );
+
+      const completedCount = members.filter(m => m.has_completed === 1).length;
+      const totalCount = members.length;
+
+      const feed = members.map(m => ({
+        userId: m.user_id,
+        displayName: m.display_name,
+        avatar: m.avatar,
+        status: (m.workout_count > 0 ? 'done' : 'not_started') as 'done' | 'in_progress' | 'not_started',
+        activity: m.workout_count > 0
+          ? `${m.workout_count} workout${m.workout_count !== 1 ? 's' : ''} · ${Math.round(m.total_volume).toLocaleString()} lbs`
+          : 'No workouts this week',
+        workoutId: null,
+        workoutCount: m.workout_count,
+        totalVolume: Math.round(m.total_volume),
+        reactions: { fire: 0, clap: 0, eyes: 0 },
+        hasUserReacted: { fire: false, clap: false, eyes: false },
+        timestamp: '',
+      }));
+
+      // Get challenges
+      const challenges = await this.getSquadChallenges(userId, squadId, timezone);
+
+      return {
+        squad: {
+          id: squad.id,
+          name: squad.name,
+          inviteCode: squad.invite_code,
+          createdBy: squad.created_by,
+        },
+        dailyProgress: {
+          completed: completedCount,
+          total: totalCount,
+          percentage: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
+        },
+        feed,
+        challenges,
+      };
+    }
+
+    // Daily view (existing logic)
     const members = await db.query<DbMemberWithWorkout>(
       `SELECT
         u.id as user_id,
@@ -225,6 +302,9 @@ export const squadService = {
       };
     });
 
+    // Get challenges
+    const challenges = await this.getSquadChallenges(userId, squadId, timezone);
+
     return {
       squad: {
         id: squad.id,
@@ -238,6 +318,7 @@ export const squadService = {
         percentage: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
       },
       feed,
+      challenges,
     };
   },
 
@@ -476,6 +557,165 @@ export const squadService = {
       [workoutId, userId, reactionType]
     );
     return { success: true };
+  },
+
+  async createChallenge(userId: string, squadId: string, input: CreateChallengeInput) {
+    const membership = await db.queryOne<DbSquadMember>(
+      'SELECT * FROM squad_members WHERE squad_id = $1 AND user_id = $2',
+      [squadId, userId]
+    );
+    if (!membership) throw new ForbiddenError('You are not a member of this squad');
+
+    const id = uuidv4();
+    await db.execute(
+      `INSERT INTO squad_challenges (id, squad_id, created_by, exercise_id, target_sets, target_reps, target_weight, deadline)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [id, squadId, userId, input.exerciseId, input.targetSets, input.targetReps, input.targetWeight ?? null, input.deadline]
+    );
+
+    logger.info({ challengeId: id, squadId, userId }, 'Challenge created');
+    return { id };
+  },
+
+  async completeChallenge(userId: string, challengeId: string) {
+    const challenge = await db.queryOne<{ id: string; squad_id: string; created_by: string; status: string; deadline: string }>(
+      'SELECT id, squad_id, created_by, status, deadline FROM squad_challenges WHERE id = $1',
+      [challengeId]
+    );
+    if (!challenge) throw new NotFoundError('Challenge not found');
+
+    // Challenge creator cannot complete their own challenge
+    if (challenge.created_by === userId) {
+      throw new ForbiddenError('You cannot complete your own challenge');
+    }
+
+    // Verify membership
+    const membership = await db.queryOne<DbSquadMember>(
+      'SELECT * FROM squad_members WHERE squad_id = $1 AND user_id = $2',
+      [challenge.squad_id, userId]
+    );
+    if (!membership) throw new ForbiddenError('You are not a member of this squad');
+
+    if (challenge.status === 'expired') throw new ConflictError('Challenge has expired');
+
+    // Check deadline
+    const today = new Date().toISOString().split('T')[0];
+    if (challenge.deadline < today) {
+      await db.execute("UPDATE squad_challenges SET status = 'expired' WHERE id = $1", [challengeId]);
+      throw new ConflictError('Challenge has expired');
+    }
+
+    const id = uuidv4();
+    try {
+      await db.execute(
+        'INSERT INTO squad_challenge_completions (id, challenge_id, user_id) VALUES ($1, $2, $3)',
+        [id, challengeId, userId]
+      );
+    } catch {
+      throw new ConflictError('Already completed this challenge');
+    }
+
+    logger.info({ challengeId, userId }, 'Challenge completed');
+    return { success: true };
+  },
+
+  async deleteChallenge(userId: string, challengeId: string) {
+    const challenge = await db.queryOne<{ id: string; squad_id: string; created_by: string }>(
+      'SELECT id, squad_id, created_by FROM squad_challenges WHERE id = $1',
+      [challengeId]
+    );
+    if (!challenge) throw new NotFoundError('Challenge not found');
+
+    // Only the creator can delete
+    if (challenge.created_by !== userId) {
+      throw new ForbiddenError('Only the challenge creator can delete it');
+    }
+
+    await db.execute('DELETE FROM squad_challenges WHERE id = $1', [challengeId]);
+    logger.info({ challengeId, userId }, 'Challenge deleted');
+    return { success: true };
+  },
+
+  async getSquadChallenges(userId: string, squadId: string, timezone?: string) {
+    const today = getDateInTimezone(timezone);
+
+    // Auto-expire past-deadline challenges
+    await db.execute(
+      "UPDATE squad_challenges SET status = 'expired' WHERE squad_id = $1 AND status = 'active' AND deadline < $2",
+      [squadId, today]
+    );
+
+    // Get active + recently expired (last 7 days)
+    const sevenDaysAgo = new Date(new Date(today).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+    const challenges = await db.query<{
+      id: string; squad_id: string; created_by: string; exercise_id: string;
+      target_sets: number; target_reps: number; target_weight: number | null;
+      deadline: string; status: string; created_at: string;
+      creator_name: string; exercise_name: string;
+    }>(
+      `SELECT sc.*,
+        COALESCE(u.display_name, u.username) as creator_name,
+        e.name as exercise_name
+       FROM squad_challenges sc
+       JOIN users u ON sc.created_by = u.id
+       JOIN exercises e ON sc.exercise_id = e.id
+       WHERE sc.squad_id = $1 AND (sc.status = 'active' OR (sc.status = 'expired' AND sc.deadline >= $2))
+       ORDER BY sc.status ASC, sc.deadline ASC`,
+      [squadId, sevenDaysAgo]
+    );
+
+    // Get completions for these challenges
+    const challengeIds = challenges.map(c => c.id);
+    let completions: { challenge_id: string; user_id: string; display_name: string; avatar: string | null; completed_at: string }[] = [];
+
+    if (challengeIds.length > 0) {
+      const placeholders = challengeIds.map(() => '?').join(',');
+      completions = await db.query<{ challenge_id: string; user_id: string; display_name: string; avatar: string | null; completed_at: string }>(
+        `SELECT scc.challenge_id, scc.user_id, COALESCE(u.display_name, u.username) as display_name, u.avatar, scc.completed_at
+         FROM squad_challenge_completions scc
+         JOIN users u ON scc.user_id = u.id
+         WHERE scc.challenge_id IN (${placeholders})`,
+        challengeIds
+      );
+    }
+
+    // Get total member count (excluding challenge creator for each challenge)
+    const memberCount = await db.queryOne<{ count: number }>(
+      'SELECT COUNT(*) as count FROM squad_members WHERE squad_id = $1',
+      [squadId]
+    );
+    const totalMembersBase = memberCount?.count || 0;
+
+    const completionMap = new Map<string, { userId: string; displayName: string; avatar: string | null; completedAt: string }[]>();
+    for (const c of completions) {
+      if (!completionMap.has(c.challenge_id)) completionMap.set(c.challenge_id, []);
+      completionMap.get(c.challenge_id)!.push({
+        userId: c.user_id,
+        displayName: c.display_name,
+        avatar: c.avatar,
+        completedAt: c.completed_at,
+      });
+    }
+
+    return challenges.map(c => ({
+      id: c.id,
+      squadId: c.squad_id,
+      createdBy: c.created_by,
+      creatorName: c.creator_name,
+      exerciseId: c.exercise_id,
+      exerciseName: c.exercise_name,
+      targetSets: c.target_sets,
+      targetReps: c.target_reps,
+      targetWeight: c.target_weight,
+      deadline: c.deadline,
+      status: c.status as 'active' | 'expired',
+      completions: completionMap.get(c.id) || [],
+      hasUserCompleted: (completionMap.get(c.id) || []).some(comp => comp.userId === userId),
+      // Exclude challenge creator from challengees count
+      totalMembers: Math.max(0, totalMembersBase - 1),
+      createdAt: c.created_at,
+    }));
   },
 
   async leaveSquad(userId: string, squadId: string) {

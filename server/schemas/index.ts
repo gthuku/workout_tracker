@@ -136,6 +136,24 @@ export const PRTrendsQuerySchema = z.object({
   weeks: z.coerce.number().min(1).max(104).default(52),
 });
 
+export const CreateProgressCheckinSchema = z.object({
+  photos: z.array(z.string().min(1).max(1_500_000)).min(1).max(3),
+  weight: z.number().min(1).max(1000),
+  waist: z.number().min(1).max(200).optional(),
+  note: z.string().max(1000).optional(),
+  timezone: z.string().max(100).optional().refine(
+    (value) => value === undefined || isValidIanaTimezone(value),
+    { message: 'Invalid timezone' }
+  ),
+});
+
+export const ProgressCheckinQuerySchema = z.object({
+  timezone: z.string().max(100).optional().refine(
+    (value) => value === undefined || isValidIanaTimezone(value),
+    { message: 'Invalid timezone' }
+  ),
+});
+
 // Squad schemas
 export const ReactionTypeEnum = z.enum(['fire', 'clap', 'eyes']);
 
@@ -178,6 +196,15 @@ export const SquadDashboardQuerySchema = z.object({
     (value) => value === undefined || isValidIanaTimezone(value),
     { message: 'Invalid timezone' }
   ),
+  period: z.enum(['today', 'week']).default('today'),
+});
+
+export const CreateChallengeSchema = z.object({
+  exerciseId: z.string(),
+  targetSets: z.number().int().min(1).max(100),
+  targetReps: z.number().int().min(1).max(999),
+  targetWeight: z.number().min(0).optional(),
+  deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
 });
 
 // Type exports
@@ -192,3 +219,5 @@ export type CreateSetInput = z.infer<typeof CreateSetSchema>;
 export type UpdateSetInput = z.infer<typeof UpdateSetSchema>;
 export type CreateSquadInput = z.infer<typeof CreateSquadSchema>;
 export type AddReactionInput = z.infer<typeof AddReactionSchema>;
+export type CreateChallengeInput = z.infer<typeof CreateChallengeSchema>;
+export type CreateProgressCheckinInput = z.infer<typeof CreateProgressCheckinSchema>;

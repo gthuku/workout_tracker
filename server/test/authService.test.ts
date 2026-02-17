@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { authService } from '../services/authService.js';
 
 // Mock the database module
 vi.mock('../database.js', () => ({
@@ -11,8 +10,16 @@ vi.mock('../database.js', () => ({
     },
 }));
 
+// Mock mailer
+vi.mock('../utils/mailer.js', () => ({
+    sendPasswordResetEmail: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { authService } from '../services/authService.js';
+
 // Import the mocked db
 import { db } from '../database.js';
+import { sendPasswordResetEmail } from '../utils/mailer.js';
 
 describe('AuthService', () => {
     const originalNodeEnv = process.env.NODE_ENV;
@@ -171,9 +178,10 @@ describe('AuthService', () => {
             expect(result.success).toBe(true);
             expect('resetToken' in result ? result.resetToken : undefined).toBeTruthy();
             expect('expiresIn' in result ? result.expiresIn : undefined).toBe('1 hour(s)');
+            expect(sendPasswordResetEmail).not.toHaveBeenCalled();
         });
 
-        it('should hide reset token in production by default', async () => {
+        it('should hide reset token in production by default and send email', async () => {
             process.env.NODE_ENV = 'production';
             delete process.env.AUTH_EXPOSE_RESET_TOKEN;
 
@@ -193,6 +201,7 @@ describe('AuthService', () => {
             expect(result.success).toBe(true);
             expect('resetToken' in result ? result.resetToken : undefined).toBeUndefined();
             expect('expiresIn' in result ? result.expiresIn : undefined).toBeUndefined();
+            expect(sendPasswordResetEmail).toHaveBeenCalledTimes(1);
         });
 
         it('should include reset token in production when explicitly enabled', async () => {
@@ -215,6 +224,7 @@ describe('AuthService', () => {
             expect(result.success).toBe(true);
             expect('resetToken' in result ? result.resetToken : undefined).toBeTruthy();
             expect('expiresIn' in result ? result.expiresIn : undefined).toBe('1 hour(s)');
+            expect(sendPasswordResetEmail).not.toHaveBeenCalled();
         });
     });
 });
