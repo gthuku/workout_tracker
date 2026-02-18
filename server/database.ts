@@ -111,6 +111,7 @@ const SCHEMA_SQL = `
     date TEXT NOT NULL,
     duration INTEGER,
     notes TEXT,
+    photos TEXT DEFAULT '[]',
     is_complete INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
@@ -161,6 +162,30 @@ const SCHEMA_SQL = `
     UNIQUE(user_id, week_start_date)
   );
 
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    expiration_time INTEGER,
+    user_agent TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS rest_timer_notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    due_at INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'cancelled')),
+    error TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    sent_at TIMESTAMP
+  );
+
   CREATE TABLE IF NOT EXISTS squads (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -192,9 +217,10 @@ const SCHEMA_SQL = `
     id TEXT PRIMARY KEY,
     workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
     reactor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    reaction_type TEXT NOT NULL CHECK (reaction_type IN ('fire', 'clap', 'eyes')),
+    reaction_type TEXT NOT NULL CHECK (reaction_type IN ('fire', 'clap', 'eyes', 'meme')),
+    meme_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(workout_id, reactor_user_id, reaction_type)
+    UNIQUE(workout_id, reactor_user_id, reaction_type, meme_url)
   );
 
   CREATE TABLE IF NOT EXISTS squad_challenges (
@@ -227,6 +253,9 @@ const INDEXES_SQL = `
   CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type);
   CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
   CREATE INDEX IF NOT EXISTS idx_progress_checkins_user_date ON progress_checkins(user_id, checkin_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
+  CREATE INDEX IF NOT EXISTS idx_rest_timer_notifications_due_status ON rest_timer_notifications(status, due_at);
+  CREATE INDEX IF NOT EXISTS idx_rest_timer_notifications_user_status ON rest_timer_notifications(user_id, status);
   CREATE INDEX IF NOT EXISTS idx_squad_members_squad ON squad_members(squad_id);
   CREATE INDEX IF NOT EXISTS idx_squad_members_user ON squad_members(user_id);
   CREATE INDEX IF NOT EXISTS idx_squad_invites_user ON squad_invites(invited_user_id);
@@ -267,6 +296,8 @@ export async function initializeDatabase(): Promise<void> {
     'ALTER TABLE users ADD COLUMN email TEXT UNIQUE',
     'ALTER TABLE users ADD COLUMN password_hash TEXT',
     'ALTER TABLE users ADD COLUMN avatar TEXT',
+    "ALTER TABLE workouts ADD COLUMN photos TEXT DEFAULT '[]'",
+    'ALTER TABLE squad_reactions ADD COLUMN meme_url TEXT',
   ];
 
   for (const stmt of alterStatements) {
@@ -275,6 +306,38 @@ export async function initializeDatabase(): Promise<void> {
     } catch {
       // Column already exists
     }
+  }
+
+  // Migration: Update squad_reactions CHECK constraint to include 'meme'
+  // SQLite doesn't support altering constraints, so we recreate the table
+  try {
+    const hasOldConstraint = await db.queryOne<{ sql: string }>(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='squad_reactions'"
+    );
+    if (hasOldConstraint?.sql && !hasOldConstraint.sql.includes("'meme'")) {
+      logger.info('Migrating squad_reactions table to support meme reactions...');
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS squad_reactions_new (
+          id TEXT PRIMARY KEY,
+          workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
+          reactor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          reaction_type TEXT NOT NULL CHECK (reaction_type IN ('fire', 'clap', 'eyes', 'meme')),
+          meme_url TEXT,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(workout_id, reactor_user_id, reaction_type, meme_url)
+        )
+      `);
+      await db.execute(`
+        INSERT OR IGNORE INTO squad_reactions_new (id, workout_id, reactor_user_id, reaction_type, meme_url, created_at)
+        SELECT id, workout_id, reactor_user_id, reaction_type, meme_url, created_at FROM squad_reactions
+      `);
+      await db.execute('DROP TABLE squad_reactions');
+      await db.execute('ALTER TABLE squad_reactions_new RENAME TO squad_reactions');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_squad_reactions_workout ON squad_reactions(workout_id)');
+      logger.info('Migration complete: squad_reactions now supports meme reactions');
+    }
+  } catch (error) {
+    logger.warn({ error }, 'squad_reactions migration skipped or failed');
   }
 
   logger.info('Database initialized');

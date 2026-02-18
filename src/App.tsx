@@ -1,7 +1,8 @@
-import { useState, lazy, Suspense } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProfileSelector } from './components/ProfileSelector';
+import { authApi } from './api/client';
 
 // Lazy load route components for code splitting
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -39,6 +40,35 @@ function App() {
     }
     return localStorage.getItem('selectedProfileId');
   });
+  const [verifyingAuth, setVerifyingAuth] = useState(true);
+
+  // Verify auth on app load to catch stale/invalid tokens
+  useEffect(() => {
+    const verifyAuth = async () => {
+      const profileId = localStorage.getItem('selectedProfileId');
+      const token = localStorage.getItem('authToken');
+
+      // No stored auth, nothing to verify
+      if (!profileId || !token) {
+        setVerifyingAuth(false);
+        return;
+      }
+
+      try {
+        // Verify the token is still valid
+        await authApi.verify();
+        setVerifyingAuth(false);
+      } catch {
+        // Token is invalid - clear auth and redirect to login
+        localStorage.removeItem('selectedProfileId');
+        localStorage.removeItem('authToken');
+        setSelectedProfileId(null);
+        setVerifyingAuth(false);
+      }
+    };
+
+    verifyAuth();
+  }, []);
 
   const handleProfileSelected = (profileId: string) => {
     setSelectedProfileId(profileId);
@@ -46,8 +76,18 @@ function App() {
 
   const handleSwitchProfile = () => {
     localStorage.removeItem('selectedProfileId');
+    localStorage.removeItem('authToken');
     setSelectedProfileId(null);
   };
+
+  // Show loading while verifying auth
+  if (verifyingAuth) {
+    return (
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!selectedProfileId) {
     return <ProfileSelector onProfileSelected={handleProfileSelected} />;

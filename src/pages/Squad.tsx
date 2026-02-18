@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Users, Plus, Search, X, Copy, Check, UserPlus, Mail, LogOut, ChevronRight, Trophy, Calendar, Trash2 } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Users, Plus, Search, X, Copy, Check, UserPlus, Mail, LogOut, ChevronRight, ChevronLeft, Trophy, Calendar, Trash2, ImagePlus } from 'lucide-react';
 import { squadApi, exerciseApi } from '../api/client';
 import type { Squad as SquadType, SquadDashboard, SquadInvite, SquadUserSearchResult, ReactionType, Exercise } from '../types';
 
@@ -8,6 +8,7 @@ type View = 'loading' | 'empty' | 'dashboard';
 
 export function Squad() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [view, setView] = useState<View>('loading');
   const [squads, setSquads] = useState<SquadType[]>([]);
   const [selectedSquadId, setSelectedSquadId] = useState<string | null>(null);
@@ -33,8 +34,15 @@ export function Squad() {
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [inviting, setInviting] = useState<string | null>(null);
 
-  // Period toggle
+  // Period toggle and date navigation (persisted in URL)
   const [period, setPeriod] = useState<'today' | 'week'>('today');
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const dateParam = searchParams.get('date');
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      return dateParam;
+    }
+    return new Date().toISOString().split('T')[0];
+  });
 
   // Create challenge modal
   const [showCreateChallenge, setShowCreateChallenge] = useState(false);
@@ -54,6 +62,10 @@ export function Squad() {
   const [showSquadMenu, setShowSquadMenu] = useState(false);
   const [leaving, setLeaving] = useState(false);
 
+  // Meme reaction
+  const [memeWorkoutId, setMemeWorkoutId] = useState<string | null>(null);
+  const [memeUrl, setMemeUrl] = useState('');
+
   // Current user ID for checking challenge ownership
   const currentUserId = localStorage.getItem('selectedProfileId');
 
@@ -71,7 +83,7 @@ export function Squad() {
           ? selectedSquadId
           : squadList[0].id;
         setSelectedSquadId(id);
-        const dash = await squadApi.getDashboard(id, period);
+        const dash = await squadApi.getDashboard(id, period, selectedDate);
         setDashboard(dash);
         setView('dashboard');
       } else {
@@ -81,7 +93,7 @@ export function Squad() {
       console.error('Failed to load squads:', error);
       setView('empty');
     }
-  }, [selectedSquadId, period]);
+  }, [selectedSquadId, period, selectedDate]);
 
   useEffect(() => {
     loadSquads();
@@ -91,7 +103,7 @@ export function Squad() {
   const handleSelectSquad = async (id: string) => {
     setSelectedSquadId(id);
     try {
-      const dash = await squadApi.getDashboard(id, period);
+      const dash = await squadApi.getDashboard(id, period, selectedDate);
       setDashboard(dash);
     } catch (error) {
       console.error('Failed to load dashboard:', error);
@@ -102,13 +114,58 @@ export function Squad() {
     setPeriod(newPeriod);
     if (selectedSquadId) {
       try {
-        const dash = await squadApi.getDashboard(selectedSquadId, newPeriod);
+        const dash = await squadApi.getDashboard(selectedSquadId, newPeriod, selectedDate);
         setDashboard(dash);
       } catch (error) {
         console.error('Failed to load dashboard:', error);
       }
     }
   };
+
+  const handleDateChange = async (direction: 'prev' | 'next') => {
+    const current = new Date(selectedDate + 'T00:00:00');
+    if (direction === 'prev') {
+      current.setDate(current.getDate() - 1);
+    } else {
+      current.setDate(current.getDate() + 1);
+    }
+    const newDate = current.toISOString().split('T')[0];
+    setSelectedDate(newDate);
+    // Update URL to persist date across navigation
+    const today = new Date().toISOString().split('T')[0];
+    if (newDate === today) {
+      searchParams.delete('date');
+    } else {
+      searchParams.set('date', newDate);
+    }
+    setSearchParams(searchParams, { replace: true });
+    if (selectedSquadId) {
+      try {
+        const dash = await squadApi.getDashboard(selectedSquadId, period, newDate);
+        setDashboard(dash);
+      } catch (error) {
+        console.error('Failed to load dashboard:', error);
+      }
+    }
+  };
+
+  const handleGoToToday = async () => {
+    const today = new Date().toISOString().split('T')[0];
+    setSelectedDate(today);
+    // Remove date param when going to today
+    searchParams.delete('date');
+    setSearchParams(searchParams, { replace: true });
+    if (selectedSquadId) {
+      try {
+        const dash = await squadApi.getDashboard(selectedSquadId, period, today);
+        setDashboard(dash);
+      } catch (error) {
+        console.error('Failed to load dashboard:', error);
+      }
+    }
+  };
+
+  const isToday = selectedDate === new Date().toISOString().split('T')[0];
 
   const handleCreate = async () => {
     if (!newSquadName.trim() || creating) return;
@@ -223,11 +280,26 @@ export function Squad() {
       }
       // Refresh dashboard
       if (selectedSquadId) {
-        const dash = await squadApi.getDashboard(selectedSquadId, period);
+        const dash = await squadApi.getDashboard(selectedSquadId, period, selectedDate);
         setDashboard(dash);
       }
     } catch (error) {
       console.error('Failed to toggle reaction:', error);
+    }
+  };
+
+  const handleAddMeme = async () => {
+    if (!memeWorkoutId || !memeUrl.trim()) return;
+    try {
+      await squadApi.addReaction(memeWorkoutId, 'meme', memeUrl.trim());
+      setMemeWorkoutId(null);
+      setMemeUrl('');
+      if (selectedSquadId) {
+        const dash = await squadApi.getDashboard(selectedSquadId, period, selectedDate);
+        setDashboard(dash);
+      }
+    } catch (error) {
+      console.error('Failed to add meme reaction:', error);
     }
   };
 
@@ -259,7 +331,7 @@ export function Squad() {
         deadline: challengeDeadline,
       });
       setShowCreateChallenge(false);
-      const dash = await squadApi.getDashboard(selectedSquadId, period);
+      const dash = await squadApi.getDashboard(selectedSquadId, period, selectedDate);
       setDashboard(dash);
     } catch (error) {
       console.error('Failed to create challenge:', error);
@@ -272,7 +344,7 @@ export function Squad() {
     try {
       await squadApi.completeChallenge(challengeId);
       if (selectedSquadId) {
-        const dash = await squadApi.getDashboard(selectedSquadId, period);
+        const dash = await squadApi.getDashboard(selectedSquadId, period, selectedDate);
         setDashboard(dash);
       }
     } catch (error) {
@@ -285,7 +357,7 @@ export function Squad() {
     try {
       await squadApi.deleteChallenge(challengeId);
       if (selectedSquadId) {
-        const dash = await squadApi.getDashboard(selectedSquadId, period);
+        const dash = await squadApi.getDashboard(selectedSquadId, period, selectedDate);
         setDashboard(dash);
       }
     } catch (error) {
@@ -728,9 +800,41 @@ export function Squad() {
 
       {/* Activity Feed */}
       <div className="card">
-        <div className="flex items-center gap-2 mb-4">
-          <Users className="text-zinc-400" size={18} />
-          <h2 className="font-semibold">{period === 'today' ? "Today's Activity" : "This Week's Activity"}</h2>
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Users className="text-zinc-400" size={18} />
+            <h2 className="font-semibold">{period === 'today' ? "Day's Activity" : "Week's Activity"}</h2>
+          </div>
+          {/* Date Navigation */}
+          {period === 'today' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleDateChange('prev')}
+                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors"
+                title="Previous day"
+              >
+                <ChevronLeft size={16} />
+              </button>
+              <button
+                onClick={handleGoToToday}
+                className={`text-xs px-2 py-1 rounded-lg transition-colors ${
+                  isToday
+                    ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                    : 'bg-zinc-800 hover:bg-zinc-700'
+                }`}
+              >
+                {isToday ? 'Today' : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </button>
+              <button
+                onClick={() => handleDateChange('next')}
+                disabled={isToday}
+                className="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Next day"
+              >
+                <ChevronRight size={16} />
+              </button>
+            </div>
+          )}
         </div>
         <div className="space-y-1">
           {dashboard?.feed.map(member => (
@@ -772,11 +876,26 @@ export function Squad() {
                 </div>
                 <p className="text-xs text-zinc-500 truncate">{member.activity}</p>
 
+                {/* Workout Photos */}
+                {member.photos && member.photos.length > 0 && (
+                  <div className="flex gap-2 mt-2 overflow-x-auto">
+                    {member.photos.map((photo, i) => (
+                      <img
+                        key={i}
+                        src={photo}
+                        alt="Workout"
+                        className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                        onClick={(e) => { e.stopPropagation(); window.open(photo, '_blank'); }}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 {/* Reactions */}
                 {member.workoutId && (
-                  <div className="flex gap-2 mt-2">
-                    {(['fire', 'clap', 'eyes'] as ReactionType[]).map(type => {
-                      const emoji = type === 'fire' ? '\uD83D\uDD25' : type === 'clap' ? '\uD83D\uDC4F' : '\uD83D\uDC40';
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {(['fire', 'clap', 'eyes'] as const).map(type => {
+                      const emoji = type === 'fire' ? '🔥' : type === 'clap' ? '👏' : '👀';
                       const count = member.reactions[type];
                       const reacted = member.hasUserReacted[type];
                       return (
@@ -794,6 +913,34 @@ export function Squad() {
                         </button>
                       );
                     })}
+                    {/* Add meme button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setMemeWorkoutId(member.workoutId); }}
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-zinc-900 border border-zinc-800 hover:border-zinc-700 transition-colors"
+                      title="Add meme reaction"
+                    >
+                      <ImagePlus size={14} />
+                    </button>
+                  </div>
+                )}
+
+                {/* Meme Reactions */}
+                {member.memeReactions && member.memeReactions.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {member.memeReactions.map((meme, i) => (
+                      <div
+                        key={i}
+                        className="relative group"
+                        title={`by ${meme.reactorName}`}
+                      >
+                        <img
+                          src={meme.memeUrl}
+                          alt="Meme"
+                          className="w-12 h-12 rounded-lg object-cover"
+                          onClick={(e) => { e.stopPropagation(); window.open(meme.memeUrl, '_blank'); }}
+                        />
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1090,6 +1237,54 @@ export function Squad() {
             >
               {creatingChallenge ? 'Creating...' : 'Create Challenge'}
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Meme Reaction Modal */}
+      {memeWorkoutId && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/60" onClick={() => { setMemeWorkoutId(null); setMemeUrl(''); }} />
+          <div className="relative w-full max-w-lg bg-[#111111] border border-zinc-800 rounded-t-2xl sm:rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Add Meme Reaction</h2>
+              <button onClick={() => { setMemeWorkoutId(null); setMemeUrl(''); }} className="p-1 text-zinc-400 hover:text-white">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm text-zinc-400 mb-1 block">Meme Image URL</label>
+                <input
+                  type="url"
+                  value={memeUrl}
+                  onChange={e => setMemeUrl(e.target.value)}
+                  placeholder="https://example.com/meme.gif"
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-3 text-white placeholder-zinc-600 focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+              </div>
+
+              {memeUrl && (
+                <div className="flex justify-center">
+                  <img
+                    src={memeUrl}
+                    alt="Meme preview"
+                    className="max-h-48 rounded-lg object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+              )}
+
+              <button
+                onClick={handleAddMeme}
+                disabled={!memeUrl.trim()}
+                className="btn btn-primary w-full disabled:opacity-50"
+              >
+                Add Meme
+              </button>
+            </div>
           </div>
         </div>
       )}

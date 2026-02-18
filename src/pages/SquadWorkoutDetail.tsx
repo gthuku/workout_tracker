@@ -46,7 +46,7 @@ export function SquadWorkoutDetail() {
     return (
       <div className="p-4 text-center">
         <p className="text-zinc-400">Workout not found</p>
-        <button onClick={() => navigate('/squad')} className="btn btn-secondary mt-4">
+        <button onClick={() => navigate(-1)} className="btn btn-secondary mt-4">
           Back to Squad
         </button>
       </div>
@@ -76,7 +76,7 @@ export function SquadWorkoutDetail() {
       <header className="sticky top-0 bg-[#0a0a0a] border-b border-zinc-800 p-4 z-10">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-3 mb-2">
-            <button onClick={() => navigate('/squad')} className="p-2 -ml-2 text-zinc-400 hover:text-white">
+            <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-zinc-400 hover:text-white">
               <ChevronLeft size={24} />
             </button>
             <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded-full">

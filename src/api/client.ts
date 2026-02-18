@@ -391,6 +391,34 @@ export const progressApi = {
     }),
 };
 
+// Push Notification API
+export const pushApi = {
+  getPublicKey: () =>
+    fetchJson<{ enabled: boolean; publicKey: string | null }>('/api/push/public-key'),
+  saveSubscription: (subscription: PushSubscriptionJSON) =>
+    fetchJson<{ success: boolean }>('/api/push/subscriptions', {
+      method: 'POST',
+      body: JSON.stringify({
+        subscription,
+        userAgent: navigator.userAgent,
+      }),
+    }),
+  removeSubscription: (endpoint: string) =>
+    fetchJson<{ success: boolean }>('/api/push/subscriptions', {
+      method: 'DELETE',
+      body: JSON.stringify({ endpoint }),
+    }),
+  scheduleRestTimerNotification: (data: { timerId: string; dueAt: number; title?: string; body?: string }) =>
+    fetchJson<{ success: boolean; timerId: string }>('/api/push/rest-timers', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  cancelRestTimerNotification: (timerId: string) =>
+    fetchJson<{ success: boolean }>(`/api/push/rest-timers/${timerId}`, {
+      method: 'DELETE',
+    }),
+};
+
 // Squad API
 export const squadApi = {
   list: () => fetchJson<Squad[]>('/api/squads'),
@@ -399,11 +427,12 @@ export const squadApi = {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
-  getDashboard: (squadId: string, period?: 'today' | 'week') => {
+  getDashboard: (squadId: string, period?: 'today' | 'week', date?: string) => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const params = new URLSearchParams();
     if (timezone) params.set('timezone', timezone);
     if (period) params.set('period', period);
+    if (date) params.set('date', date);
     const query = params.toString();
     return fetchJson<SquadDashboard>(`/api/squads/${squadId}/dashboard${query ? `?${query}` : ''}`);
   },
@@ -429,15 +458,15 @@ export const squadApi = {
       method: 'POST',
       body: JSON.stringify({ accept }),
     }),
-  addReaction: (workoutId: string, reactionType: ReactionType) =>
+  addReaction: (workoutId: string, reactionType: ReactionType, memeUrl?: string) =>
     fetchJson<{ success: boolean }>('/api/squads/reactions', {
       method: 'POST',
-      body: JSON.stringify({ workoutId, reactionType }),
+      body: JSON.stringify({ workoutId, reactionType, memeUrl }),
     }),
-  removeReaction: (workoutId: string, reactionType: ReactionType) =>
+  removeReaction: (workoutId: string, reactionType: ReactionType, memeUrl?: string) =>
     fetchJson<{ success: boolean }>('/api/squads/reactions', {
       method: 'DELETE',
-      body: JSON.stringify({ workoutId, reactionType }),
+      body: JSON.stringify({ workoutId, reactionType, memeUrl }),
     }),
   searchUsers: (query: string, excludeSquadId?: string) => {
     const params = new URLSearchParams({ q: query });

@@ -186,7 +186,7 @@ export const workoutService = {
       throw new ForbiddenError('Access denied');
     }
 
-    const { name, date, notes, isComplete, duration } = input;
+    const { name, date, notes, isComplete, duration, photos } = input;
     const updates: string[] = [];
     const params: unknown[] = [];
     let paramIndex = 1;
@@ -214,6 +214,11 @@ export const workoutService = {
     if (duration !== undefined) {
       updates.push(`duration = $${paramIndex}`);
       params.push(duration);
+      paramIndex++;
+    }
+    if (photos !== undefined) {
+      updates.push(`photos = $${paramIndex}`);
+      params.push(JSON.stringify(photos));
       paramIndex++;
     }
 

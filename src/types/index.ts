@@ -73,6 +73,7 @@ export interface Workout {
   name?: string;
   duration?: number;
   notes?: string;
+  photos?: string[];
   isComplete: boolean;
   createdAt: string;
 }
@@ -163,7 +164,13 @@ export interface ProgressCheckin {
 }
 
 // Squad types
-export type ReactionType = 'fire' | 'clap' | 'eyes';
+export type ReactionType = 'fire' | 'clap' | 'eyes' | 'meme';
+
+export interface MemeReaction {
+  memeUrl: string;
+  reactorName: string;
+  reactorAvatar: string | null;
+}
 
 export interface Squad {
   id: string;
@@ -184,8 +191,10 @@ export interface SquadFeedItem {
   workoutId: string | null;
   workoutCount?: number;
   totalVolume?: number;
+  photos?: string[];
   reactions: { fire: number; clap: number; eyes: number };
   hasUserReacted: { fire: boolean; clap: boolean; eyes: boolean };
+  memeReactions: MemeReaction[];
   timestamp: string;
 }
 

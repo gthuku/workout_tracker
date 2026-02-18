@@ -37,6 +37,7 @@ interface DbMemberWithWorkout {
   workout_name: string | null;
   is_complete: number | null;
   duration: number | null;
+  photos: string | null;
   workout_created_at: string | null;
 }
 
@@ -49,6 +50,13 @@ interface DbReactionCount {
 interface DbUserReaction {
   workout_id: string;
   reaction_type: string;
+}
+
+interface DbMemeReaction {
+  workout_id: string;
+  meme_url: string;
+  reactor_name: string;
+  reactor_avatar: string | null;
 }
 
 function getDateInTimezone(timezone?: string): string {
@@ -100,7 +108,7 @@ export const squadService = {
     }));
   },
 
-  async getSquadDashboard(userId: string, squadId: string, timezone?: string, period: 'today' | 'week' = 'today') {
+  async getSquadDashboard(userId: string, squadId: string, timezone?: string, period: 'today' | 'week' = 'today', date?: string) {
     // Verify user is a member
     const membership = await db.queryOne<DbSquadMember>(
       'SELECT * FROM squad_members WHERE squad_id = $1 AND user_id = $2',
@@ -113,7 +121,8 @@ export const squadService = {
     const squad = await db.queryOne<DbSquad>('SELECT * FROM squads WHERE id = $1', [squadId]);
     if (!squad) throw new NotFoundError('Squad not found');
 
-    const targetDate = getDateInTimezone(timezone);
+    // Use provided date or calculate from timezone
+    const targetDate = date || getDateInTimezone(timezone);
 
     // Compute start date for period
     let startDate: string;
@@ -166,8 +175,10 @@ export const squadService = {
         workoutId: null,
         workoutCount: m.workout_count,
         totalVolume: Math.round(m.total_volume),
+        photos: [] as string[],
         reactions: { fire: 0, clap: 0, eyes: 0 },
         hasUserReacted: { fire: false, clap: false, eyes: false },
+        memeReactions: [] as { memeUrl: string; reactorName: string; reactorAvatar: string | null }[],
         timestamp: '',
       }));
 
@@ -201,6 +212,7 @@ export const squadService = {
         latest_w.name as workout_name,
         latest_w.is_complete,
         latest_w.duration,
+        latest_w.photos,
         latest_w.created_at as workout_created_at
        FROM squad_members sm
        JOIN users u ON sm.user_id = u.id
@@ -232,13 +244,14 @@ export const squadService = {
 
     let reactionCounts: DbReactionCount[] = [];
     let userReactions: DbUserReaction[] = [];
+    let memeReactions: DbMemeReaction[] = [];
 
     if (workoutIds.length > 0) {
       const placeholders = workoutIds.map(() => '?').join(',');
       reactionCounts = await db.query<DbReactionCount>(
         `SELECT workout_id, reaction_type, COUNT(*) as count
          FROM squad_reactions
-         WHERE workout_id IN (${placeholders})
+         WHERE workout_id IN (${placeholders}) AND reaction_type != 'meme'
          GROUP BY workout_id, reaction_type`,
         workoutIds
       );
@@ -246,8 +259,17 @@ export const squadService = {
       userReactions = await db.query<DbUserReaction>(
         `SELECT workout_id, reaction_type
          FROM squad_reactions
-         WHERE workout_id IN (${placeholders}) AND reactor_user_id = ?`,
+         WHERE workout_id IN (${placeholders}) AND reactor_user_id = ? AND reaction_type != 'meme'`,
         [...workoutIds, userId]
+      );
+
+      // Get meme reactions with reactor info
+      memeReactions = await db.query<DbMemeReaction>(
+        `SELECT sr.workout_id, sr.meme_url, COALESCE(u.display_name, u.username) as reactor_name, u.avatar as reactor_avatar
+         FROM squad_reactions sr
+         JOIN users u ON sr.reactor_user_id = u.id
+         WHERE sr.workout_id IN (${placeholders}) AND sr.reaction_type = 'meme' AND sr.meme_url IS NOT NULL`,
+        workoutIds
       );
     }
 
@@ -267,8 +289,23 @@ export const squadService = {
       userReactionMap.get(key)![ur.reaction_type as 'fire' | 'clap' | 'eyes'] = true;
     }
 
+    // Build meme reactions lookup map
+    const memeReactionMap = new Map<string, { memeUrl: string; reactorName: string; reactorAvatar: string | null }[]>();
+    for (const mr of memeReactions) {
+      if (!memeReactionMap.has(mr.workout_id)) memeReactionMap.set(mr.workout_id, []);
+      memeReactionMap.get(mr.workout_id)!.push({
+        memeUrl: mr.meme_url,
+        reactorName: mr.reactor_name,
+        reactorAvatar: mr.reactor_avatar,
+      });
+    }
+
     const completedCount = members.filter(m => m.is_complete === 1).length;
     const totalCount = members.length;
+
+    // Check if viewing a past day
+    const todayDate = getDateInTimezone(timezone);
+    const isPastDay = targetDate < todayDate;
 
     const feed = members.map(m => {
       let status: 'done' | 'in_progress' | 'not_started';
@@ -280,14 +317,24 @@ export const squadService = {
         activity = `Finished: ${m.workout_name || 'Workout'}${durationStr}`;
       } else if (m.workout_id && m.is_complete === 0) {
         status = 'in_progress';
-        activity = `Currently: ${m.workout_name || 'Working out'}`;
+        activity = isPastDay ? 'Workout not completed' : `Currently: ${m.workout_name || 'Working out'}`;
       } else {
         status = 'not_started';
-        activity = "Hasn't started yet";
+        activity = isPastDay ? 'No activity reported' : "Hasn't started yet";
       }
 
       const defaultReactions = { fire: 0, clap: 0, eyes: 0 };
       const defaultUserReacted = { fire: false, clap: false, eyes: false };
+
+      // Parse photos JSON
+      let photos: string[] = [];
+      if (m.photos) {
+        try {
+          photos = JSON.parse(m.photos);
+        } catch {
+          photos = [];
+        }
+      }
 
       return {
         userId: m.user_id,
@@ -296,8 +343,10 @@ export const squadService = {
         status,
         activity,
         workoutId: m.workout_id,
+        photos,
         reactions: m.workout_id ? (reactionMap.get(m.workout_id) || defaultReactions) : defaultReactions,
         hasUserReacted: m.workout_id ? (userReactionMap.get(m.workout_id) || defaultUserReacted) : defaultUserReacted,
+        memeReactions: m.workout_id ? (memeReactionMap.get(m.workout_id) || []) : [],
         timestamp: m.workout_created_at || '',
       };
     });
@@ -536,26 +585,49 @@ export const squadService = {
     };
   },
 
-  async addReaction(userId: string, workoutId: string, reactionType: string) {
-    const existing = await db.queryOne(
-      'SELECT id FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3',
-      [workoutId, userId, reactionType]
-    );
-    if (existing) return { success: true };
+  async addReaction(userId: string, workoutId: string, reactionType: string, memeUrl?: string) {
+    if (reactionType === 'meme' && memeUrl) {
+      // For meme reactions, check if this exact meme URL already exists from this user
+      const existing = await db.queryOne(
+        'SELECT id FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3 AND meme_url = $4',
+        [workoutId, userId, reactionType, memeUrl]
+      );
+      if (existing) return { success: true };
 
-    const id = uuidv4();
-    await db.execute(
-      'INSERT INTO squad_reactions (id, workout_id, reactor_user_id, reaction_type) VALUES ($1, $2, $3, $4)',
-      [id, workoutId, userId, reactionType]
-    );
+      const id = uuidv4();
+      await db.execute(
+        'INSERT INTO squad_reactions (id, workout_id, reactor_user_id, reaction_type, meme_url) VALUES ($1, $2, $3, $4, $5)',
+        [id, workoutId, userId, reactionType, memeUrl]
+      );
+    } else {
+      // Standard emoji reactions
+      const existing = await db.queryOne(
+        'SELECT id FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3',
+        [workoutId, userId, reactionType]
+      );
+      if (existing) return { success: true };
+
+      const id = uuidv4();
+      await db.execute(
+        'INSERT INTO squad_reactions (id, workout_id, reactor_user_id, reaction_type) VALUES ($1, $2, $3, $4)',
+        [id, workoutId, userId, reactionType]
+      );
+    }
     return { success: true };
   },
 
-  async removeReaction(userId: string, workoutId: string, reactionType: string) {
-    await db.execute(
-      'DELETE FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3',
-      [workoutId, userId, reactionType]
-    );
+  async removeReaction(userId: string, workoutId: string, reactionType: string, memeUrl?: string) {
+    if (reactionType === 'meme' && memeUrl) {
+      await db.execute(
+        'DELETE FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3 AND meme_url = $4',
+        [workoutId, userId, reactionType, memeUrl]
+      );
+    } else {
+      await db.execute(
+        'DELETE FROM squad_reactions WHERE workout_id = $1 AND reactor_user_id = $2 AND reaction_type = $3',
+        [workoutId, userId, reactionType]
+      );
+    }
     return { success: true };
   },
 

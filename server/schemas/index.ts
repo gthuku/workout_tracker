@@ -96,6 +96,7 @@ export const UpdateWorkoutSchema = z.object({
   notes: z.string().max(1000).optional(),
   isComplete: z.boolean().optional(),
   duration: z.number().int().min(1).max(600).optional(),
+  photos: z.array(z.string().url()).max(5).optional(),
 });
 
 // Workout set schemas
@@ -154,8 +155,37 @@ export const ProgressCheckinQuerySchema = z.object({
   ),
 });
 
+export const PushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+  expirationTime: z.number().nullable().optional(),
+  keys: z.object({
+    p256dh: z.string().min(1),
+    auth: z.string().min(1),
+  }),
+});
+
+export const SavePushSubscriptionSchema = z.object({
+  subscription: PushSubscriptionSchema,
+  userAgent: z.string().max(400).optional(),
+});
+
+export const RemovePushSubscriptionSchema = z.object({
+  endpoint: z.string().url(),
+});
+
+export const ScheduleRestTimerNotificationSchema = z.object({
+  timerId: z.string().uuid(),
+  dueAt: z.number().int().positive(),
+  title: z.string().max(120).default('Rest Complete'),
+  body: z.string().max(300).default('Time for your next set.'),
+});
+
+export const TimerIdParamSchema = z.object({
+  timerId: z.string().uuid(),
+});
+
 // Squad schemas
-export const ReactionTypeEnum = z.enum(['fire', 'clap', 'eyes']);
+export const ReactionTypeEnum = z.enum(['fire', 'clap', 'eyes', 'meme']);
 
 export const CreateSquadSchema = z.object({
   name: z.string().min(2).max(50),
@@ -172,6 +202,7 @@ export const RespondInviteSchema = z.object({
 export const AddReactionSchema = z.object({
   workoutId: z.string(),
   reactionType: ReactionTypeEnum,
+  memeUrl: z.string().url().optional(),
 });
 
 export const JoinSquadSchema = z.object({
@@ -197,6 +228,7 @@ export const SquadDashboardQuerySchema = z.object({
     { message: 'Invalid timezone' }
   ),
   period: z.enum(['today', 'week']).default('today'),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
 });
 
 export const CreateChallengeSchema = z.object({
@@ -221,3 +253,5 @@ export type CreateSquadInput = z.infer<typeof CreateSquadSchema>;
 export type AddReactionInput = z.infer<typeof AddReactionSchema>;
 export type CreateChallengeInput = z.infer<typeof CreateChallengeSchema>;
 export type CreateProgressCheckinInput = z.infer<typeof CreateProgressCheckinSchema>;
+export type SavePushSubscriptionInput = z.infer<typeof SavePushSubscriptionSchema>;
+export type ScheduleRestTimerNotificationInput = z.infer<typeof ScheduleRestTimerNotificationSchema>;

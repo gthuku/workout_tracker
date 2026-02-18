@@ -5,3 +5,4 @@ export { exerciseService } from './exerciseService.js';
 export { statsService } from './statsService.js';
 export { squadService } from './squadService.js';
 export { progressService } from './progressService.js';
+export { pushService } from './pushService.js';
