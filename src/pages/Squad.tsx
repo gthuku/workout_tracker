@@ -6,6 +6,18 @@ import type { Squad as SquadType, SquadDashboard, SquadInvite, SquadUserSearchRe
 
 type View = 'loading' | 'empty' | 'dashboard';
 
+function getLocalDateString(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDateString(dateString: string): Date {
+  const [year, month, day] = dateString.split('-').map((v) => Number.parseInt(v, 10));
+  return new Date(year, month - 1, day);
+}
+
 export function Squad() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -41,7 +53,7 @@ export function Squad() {
     if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
       return dateParam;
     }
-    return new Date().toISOString().split('T')[0];
+    return getLocalDateString();
   });
 
   // Create challenge modal
@@ -123,16 +135,16 @@ export function Squad() {
   };
 
   const handleDateChange = async (direction: 'prev' | 'next') => {
-    const current = new Date(selectedDate + 'T00:00:00');
+    const current = parseLocalDateString(selectedDate);
     if (direction === 'prev') {
       current.setDate(current.getDate() - 1);
     } else {
       current.setDate(current.getDate() + 1);
     }
-    const newDate = current.toISOString().split('T')[0];
+    const newDate = getLocalDateString(current);
     setSelectedDate(newDate);
     // Update URL to persist date across navigation
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     if (newDate === today) {
       searchParams.delete('date');
     } else {
@@ -150,7 +162,7 @@ export function Squad() {
   };
 
   const handleGoToToday = async () => {
-    const today = new Date().toISOString().split('T')[0];
+    const today = getLocalDateString();
     setSelectedDate(today);
     // Remove date param when going to today
     searchParams.delete('date');
@@ -165,7 +177,7 @@ export function Squad() {
     }
   };
 
-  const isToday = selectedDate === new Date().toISOString().split('T')[0];
+  const isToday = selectedDate === getLocalDateString();
 
   const handleCreate = async () => {
     if (!newSquadName.trim() || creating) return;
@@ -823,7 +835,7 @@ export function Squad() {
                     : 'bg-zinc-800 hover:bg-zinc-700'
                 }`}
               >
-                {isToday ? 'Today' : new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                {isToday ? 'Today' : parseLocalDateString(selectedDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </button>
               <button
                 onClick={() => handleDateChange('next')}

@@ -217,14 +217,21 @@ export const squadService = {
        FROM squad_members sm
        JOIN users u ON sm.user_id = u.id
        LEFT JOIN (
-         SELECT w1.*
-         FROM workouts w1
-         INNER JOIN (
-           SELECT user_id, MAX(created_at) as max_created
-           FROM workouts
-           WHERE DATE(date) = DATE($1)
-           GROUP BY user_id
-         ) w2 ON w1.user_id = w2.user_id AND w1.created_at = w2.max_created
+         SELECT ranked.*
+         FROM (
+           SELECT
+             w.*,
+             ROW_NUMBER() OVER (
+               PARTITION BY w.user_id
+               ORDER BY
+                 CASE WHEN w.is_complete = 1 THEN 1 ELSE 0 END DESC,
+                 datetime(w.created_at) DESC,
+                 w.id DESC
+             ) as rn
+           FROM workouts w
+           WHERE DATE(w.date) = DATE($1)
+         ) ranked
+         WHERE ranked.rn = 1
        ) latest_w ON u.id = latest_w.user_id
        WHERE sm.squad_id = $2
        ORDER BY
