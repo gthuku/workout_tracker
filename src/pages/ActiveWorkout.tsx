@@ -15,6 +15,8 @@ export function ActiveWorkout() {
     workoutExercises,
     workoutStartTime,
     workoutElapsedSeconds,
+    isLoading,
+    resumeWorkout,
     addSet,
     updateSet,
     deleteSet,
@@ -70,6 +72,13 @@ export function ActiveWorkout() {
     return () => clearInterval(interval);
   }, [workoutStartTime, updateWorkoutTimer]);
 
+  // Ensure direct navigation to /workout (e.g. from notification click)
+  // rehydrates the active session from the API.
+  useEffect(() => {
+    if (activeWorkout) return;
+    void resumeWorkout();
+  }, [activeWorkout, resumeWorkout]);
+
   // No longer auto-start - workout must be started from Dashboard
 
   // Format time as HH:MM:SS
@@ -118,6 +127,14 @@ export function ActiveWorkout() {
   };
 
   const displayName = activeWorkout?.name || generateWorkoutName();
+
+  if (isLoading && !activeWorkout) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500" />
+      </div>
+    );
+  }
 
   if (!activeWorkout) {
     return (

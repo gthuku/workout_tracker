@@ -1,4 +1,5 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect } from 'react';
+import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { Home, Dumbbell, History, BarChart3, Users, User } from 'lucide-react';
 
 interface LayoutProps {
@@ -6,6 +7,29 @@ interface LayoutProps {
 }
 
 export function Layout({ onSwitchProfile }: LayoutProps) {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      if (!event.data || event.data.type !== 'OPEN_WORKOUT') return;
+
+      const url = typeof event.data.url === 'string' ? event.data.url : '/workout';
+      try {
+        const parsed = new URL(url, window.location.origin);
+        navigate(`${parsed.pathname}${parsed.search}${parsed.hash}`);
+      } catch {
+        navigate('/workout');
+      }
+    };
+
+    navigator.serviceWorker.addEventListener('message', onServiceWorkerMessage);
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', onServiceWorkerMessage);
+    };
+  }, [navigate]);
+
   return (
     <div className="min-h-screen flex flex-col">
       <main className="flex-1 pb-24">
