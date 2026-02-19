@@ -1,12 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, Check, X, ChevronLeft, Save, Trash2, Trophy, Clock, Edit2, Timer } from 'lucide-react';
+import { Plus, Check, X, ChevronLeft, Save, Trash2, Trophy, Clock, Edit2, Timer, Camera } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { useWorkoutStore } from '../store/workoutStore';
 import { ExerciseSelector } from '../components/ExerciseSelector';
 import { RestTimer } from '../components/RestTimer';
 import type { WorkoutSet, Equipment, MuscleGroup } from '../types';
 import { WORKOUT_LIMITS } from '../constants/workout';
+
+const MAX_WORKOUT_PHOTOS = 3;
+const MAX_WORKOUT_IMAGE_BYTES = 900 * 1024;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to read image file'));
+    };
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
 
 export function ActiveWorkout() {
   const navigate = useNavigate();
@@ -30,6 +48,8 @@ export function ActiveWorkout() {
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [showCompleteModal, setShowCompleteModal] = useState(false);
   const [notes, setNotes] = useState('');
+  const [workoutPhotos, setWorkoutPhotos] = useState<string[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [showRestTimer, setShowRestTimer] = useState(false);
@@ -96,7 +116,7 @@ export function ActiveWorkout() {
     const finalName = activeWorkout?.name || generateWorkoutName();
     // Ensure duration is at least 1 minute to pass validation
     const duration = Math.max(1, Math.floor(elapsedSeconds / 60));
-    await completeWorkout(notes, finalName, duration);
+    await completeWorkout(notes, finalName, duration, workoutPhotos.length > 0 ? workoutPhotos : undefined);
     // Only navigate if no error
     if (!useWorkoutStore.getState().error) {
       navigate('/');
@@ -115,6 +135,44 @@ export function ActiveWorkout() {
       updateWorkoutName(editedName.trim());
     }
     setIsEditingName(false);
+  };
+
+  const handleWorkoutPhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+
+    if (files.length + workoutPhotos.length > MAX_WORKOUT_PHOTOS) {
+      setPhotoError(`You can upload up to ${MAX_WORKOUT_PHOTOS} photos.`);
+      event.target.value = '';
+      return;
+    }
+
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        setPhotoError('Only image files are allowed.');
+        event.target.value = '';
+        return;
+      }
+      if (file.size > MAX_WORKOUT_IMAGE_BYTES) {
+        setPhotoError(`Each photo must be under ${Math.round(MAX_WORKOUT_IMAGE_BYTES / 1024)}KB.`);
+        event.target.value = '';
+        return;
+      }
+    }
+
+    try {
+      const encoded = await Promise.all(files.map((file) => fileToDataUrl(file)));
+      setWorkoutPhotos((previous) => [...previous, ...encoded].slice(0, MAX_WORKOUT_PHOTOS));
+      setPhotoError(null);
+    } catch (error) {
+      setPhotoError((error as Error).message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveWorkoutPhoto = (index: number) => {
+    setWorkoutPhotos((previous) => previous.filter((_, photoIndex) => photoIndex !== index));
   };
 
   const triggerPRCelebration = () => {
@@ -317,6 +375,41 @@ export function ActiveWorkout() {
                   placeholder="How did it go?"
                   className="input w-full h-20 resize-none"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-slate-400 block">
+                  Workout Photos ({workoutPhotos.length}/{MAX_WORKOUT_PHOTOS})
+                </label>
+                <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-600 bg-slate-900/50 px-3 py-4 text-sm cursor-pointer">
+                  <Camera size={16} className="text-slate-400" />
+                  <span className="text-slate-300">Upload workout photos</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    onChange={handleWorkoutPhotoChange}
+                    className="hidden"
+                    disabled={workoutPhotos.length >= MAX_WORKOUT_PHOTOS}
+                  />
+                </label>
+                {workoutPhotos.length > 0 && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {workoutPhotos.map((photo, index) => (
+                      <div key={`${photo.slice(0, 32)}-${index}`} className="relative">
+                        <img src={photo} alt={`Workout photo ${index + 1}`} className="w-full h-24 rounded-lg object-cover" />
+                        <button
+                          type="button"
+                          className="absolute top-1 right-1 rounded-full bg-black/70 text-white text-xs px-1.5 py-0.5"
+                          onClick={() => handleRemoveWorkoutPhoto(index)}
+                        >
+                          x
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {photoError && <p className="text-sm text-red-400">{photoError}</p>}
               </div>
 
               <div className="flex gap-3">

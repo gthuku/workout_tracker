@@ -96,7 +96,7 @@ export const UpdateWorkoutSchema = z.object({
   notes: z.string().max(1000).optional(),
   isComplete: z.boolean().optional(),
   duration: z.number().int().min(1).max(600).optional(),
-  photos: z.array(z.string().url()).max(5).optional(),
+  photos: z.array(z.string().min(1).max(1_500_000)).max(5).optional(),
 });
 
 // Workout set schemas

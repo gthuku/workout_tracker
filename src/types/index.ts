@@ -267,6 +267,7 @@ export interface SquadWorkout {
   date: string;
   duration: number | null;
   notes: string | null;
+  photos: string[];
   isComplete: boolean;
   createdAt: string;
   sets: SquadWorkoutSet[];

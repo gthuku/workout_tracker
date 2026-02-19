@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Plus, X, Trash2, Save, Calendar, Clock } from 'lucide-react';
+import { ChevronLeft, Plus, X, Trash2, Save, Calendar, Clock, Camera } from 'lucide-react';
 import { workoutApi, setApi, exerciseApi } from '../api/client';
 import { CustomExerciseForm } from '../components/CustomExerciseForm';
 import type { Exercise } from '../types';
@@ -18,6 +18,24 @@ interface PastWorkoutExercise {
   sets: PastWorkoutSet[];
 }
 
+const MAX_WORKOUT_PHOTOS = 3;
+const MAX_WORKOUT_IMAGE_BYTES = 900 * 1024;
+
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error('Failed to read image file'));
+    };
+    reader.onerror = () => reject(new Error('Failed to read image file'));
+    reader.readAsDataURL(file);
+  });
+}
+
 function getLocalDateString(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -33,6 +51,8 @@ export function LogPastWorkout() {
     return getLocalDateString();
   });
   const [duration, setDuration] = useState(60);
+  const [workoutPhotos, setWorkoutPhotos] = useState<string[]>([]);
+  const [photoError, setPhotoError] = useState<string | null>(null);
   const [exercises, setExercises] = useState<PastWorkoutExercise[]>([]);
   const [showExerciseSelector, setShowExerciseSelector] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -130,6 +150,10 @@ export function LogPastWorkout() {
         }
       }
 
+      if (workoutPhotos.length > 0) {
+        await workoutApi.update(workout.id, { photos: workoutPhotos });
+      }
+
       navigate(`/history/${workout.id}`);
     } catch (error) {
       console.error('Failed to save workout:', error);
@@ -145,6 +169,44 @@ export function LogPastWorkout() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleWorkoutPhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) return;
+
+    if (files.length + workoutPhotos.length > MAX_WORKOUT_PHOTOS) {
+      setPhotoError(`You can upload up to ${MAX_WORKOUT_PHOTOS} photos.`);
+      event.target.value = '';
+      return;
+    }
+
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        setPhotoError('Only image files are allowed.');
+        event.target.value = '';
+        return;
+      }
+      if (file.size > MAX_WORKOUT_IMAGE_BYTES) {
+        setPhotoError(`Each photo must be under ${Math.round(MAX_WORKOUT_IMAGE_BYTES / 1024)}KB.`);
+        event.target.value = '';
+        return;
+      }
+    }
+
+    try {
+      const encoded = await Promise.all(files.map((file) => fileToDataUrl(file)));
+      setWorkoutPhotos((previous) => [...previous, ...encoded].slice(0, MAX_WORKOUT_PHOTOS));
+      setPhotoError(null);
+    } catch (error) {
+      setPhotoError((error as Error).message);
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const handleRemoveWorkoutPhoto = (index: number) => {
+    setWorkoutPhotos((previous) => previous.filter((_, photoIndex) => photoIndex !== index));
   };
 
   const handleDiscard = () => {
@@ -228,6 +290,41 @@ export function LogPastWorkout() {
                 ))}
               </select>
             </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm text-slate-400 block">
+              Workout Photos ({workoutPhotos.length}/{MAX_WORKOUT_PHOTOS})
+            </label>
+            <label className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-slate-600 bg-slate-900/50 px-3 py-4 text-sm cursor-pointer">
+              <Camera size={16} className="text-slate-400" />
+              <span className="text-slate-300">Upload workout photos</span>
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleWorkoutPhotoChange}
+                className="hidden"
+                disabled={workoutPhotos.length >= MAX_WORKOUT_PHOTOS}
+              />
+            </label>
+            {workoutPhotos.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {workoutPhotos.map((photo, index) => (
+                  <div key={`${photo.slice(0, 32)}-${index}`} className="relative">
+                    <img src={photo} alt={`Workout photo ${index + 1}`} className="w-full h-24 rounded-lg object-cover" />
+                    <button
+                      type="button"
+                      className="absolute top-1 right-1 rounded-full bg-black/70 text-white text-xs px-1.5 py-0.5"
+                      onClick={() => handleRemoveWorkoutPhoto(index)}
+                    >
+                      x
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {photoError && <p className="text-sm text-red-400">{photoError}</p>}
           </div>
         </div>
 

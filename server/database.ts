@@ -121,6 +121,7 @@ const SCHEMA_SQL = `
     workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
     exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
     set_number INTEGER NOT NULL,
+    performed_at_ms INTEGER,
     reps INTEGER CHECK (reps > 0),
     weight REAL CHECK (weight >= 0),
     duration INTEGER CHECK (duration > 0),
@@ -250,6 +251,7 @@ const INDEXES_SQL = `
   CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date);
   CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_exercise ON workout_sets(workout_id, exercise_id);
   CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id);
+  CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_performed ON workout_sets(workout_id, performed_at_ms, created_at);
   CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type);
   CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
   CREATE INDEX IF NOT EXISTS idx_progress_checkins_user_date ON progress_checkins(user_id, checkin_date DESC);
@@ -297,6 +299,7 @@ export async function initializeDatabase(): Promise<void> {
     'ALTER TABLE users ADD COLUMN password_hash TEXT',
     'ALTER TABLE users ADD COLUMN avatar TEXT',
     "ALTER TABLE workouts ADD COLUMN photos TEXT DEFAULT '[]'",
+    'ALTER TABLE workout_sets ADD COLUMN performed_at_ms INTEGER',
     'ALTER TABLE squad_reactions ADD COLUMN meme_url TEXT',
   ];
 

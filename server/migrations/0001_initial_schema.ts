@@ -58,6 +58,7 @@ export function up(db: Database.Database): void {
       workout_id TEXT NOT NULL REFERENCES workouts(id) ON DELETE CASCADE,
       exercise_id TEXT NOT NULL REFERENCES exercises(id) ON DELETE CASCADE,
       set_number INTEGER NOT NULL,
+      performed_at_ms INTEGER,
       reps INTEGER CHECK (reps > 0),
       weight REAL CHECK (weight >= 0),
       duration INTEGER CHECK (duration > 0),
@@ -97,6 +98,7 @@ export function up(db: Database.Database): void {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, date)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_exercise ON workout_sets(workout_id, exercise_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(exercise_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_workout_sets_workout_performed ON workout_sets(workout_id, performed_at_ms, created_at)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_personal_records_user_type ON personal_records(user_id, type)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id)`);
 }
@@ -107,6 +109,7 @@ export function down(db: Database.Database): void {
   db.exec(`DROP INDEX IF EXISTS idx_personal_records_user_type`);
   db.exec(`DROP INDEX IF EXISTS idx_workout_sets_exercise`);
   db.exec(`DROP INDEX IF EXISTS idx_workout_sets_workout_exercise`);
+  db.exec(`DROP INDEX IF EXISTS idx_workout_sets_workout_performed`);
   db.exec(`DROP INDEX IF EXISTS idx_workouts_user_date`);
   db.exec(`DROP INDEX IF EXISTS idx_workouts_user_complete`);
 

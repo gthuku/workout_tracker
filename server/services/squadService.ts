@@ -87,6 +87,19 @@ function generateInviteCode(): string {
   return code;
 }
 
+function parsePhotos(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((photo): photo is string => typeof photo === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export const squadService = {
   async listUserSquads(userId: string) {
     const squads = await db.query<DbSquad & { role: string; member_count: number }>(
@@ -334,14 +347,7 @@ export const squadService = {
       const defaultUserReacted = { fire: false, clap: false, eyes: false };
 
       // Parse photos JSON
-      let photos: string[] = [];
-      if (m.photos) {
-        try {
-          photos = JSON.parse(m.photos);
-        } catch {
-          photos = [];
-        }
-      }
+      const photos = parsePhotos(m.photos);
 
       return {
         userId: m.user_id,
@@ -529,7 +535,7 @@ export const squadService = {
 
   async getSquadWorkout(userId: string, workoutId: string) {
     // Check if the requesting user shares a squad with the workout owner
-    const workout = await db.queryOne<{ id: string; user_id: string; name: string; date: string; duration: number | null; notes: string | null; is_complete: number; created_at: string }>(
+    const workout = await db.queryOne<{ id: string; user_id: string; name: string; date: string; duration: number | null; notes: string | null; photos: string | null; is_complete: number; created_at: string }>(
       'SELECT * FROM workouts WHERE id = $1',
       [workoutId]
     );
@@ -562,7 +568,7 @@ export const squadService = {
        FROM workout_sets ws
        JOIN exercises e ON ws.exercise_id = e.id
        WHERE ws.workout_id = $1
-       ORDER BY ws.set_number`,
+       ORDER BY COALESCE(ws.performed_at_ms, 0) ASC, ws.created_at ASC, ws.set_number ASC, ws.id ASC`,
       [workoutId]
     );
 
@@ -574,6 +580,7 @@ export const squadService = {
       date: workout.date,
       duration: workout.duration,
       notes: workout.notes,
+      photos: parsePhotos(workout.photos),
       isComplete: workout.is_complete === 1,
       createdAt: workout.created_at,
       sets: sets.map(s => ({
