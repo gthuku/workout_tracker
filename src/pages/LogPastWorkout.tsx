@@ -18,11 +18,19 @@ interface PastWorkoutExercise {
   sets: PastWorkoutSet[];
 }
 
+function getLocalDateString(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 export function LogPastWorkout() {
   const navigate = useNavigate();
   const [workoutName, setWorkoutName] = useState('');
   const [workoutDate, setWorkoutDate] = useState(() => {
-    return new Date().toISOString().split('T')[0];
+    return getLocalDateString();
   });
   const [duration, setDuration] = useState(60);
   const [exercises, setExercises] = useState<PastWorkoutExercise[]>([]);
@@ -86,7 +94,17 @@ export function LogPastWorkout() {
       return;
     }
 
+    const hasInvalidCardioDuration = exercises.some((exerciseData) =>
+      exerciseData.exercise.equipment === 'Cardio'
+      && exerciseData.sets.some((set) => !set.duration || set.duration < 1)
+    );
+    if (hasInvalidCardioDuration) {
+      alert('Cardio sets must have a duration of at least 1 minute');
+      return;
+    }
+
     setSaving(true);
+    let createdWorkoutId: string | null = null;
     try {
       // Create the workout first
       const workout = await workoutApi.create({
@@ -95,6 +113,7 @@ export function LogPastWorkout() {
         duration,
         isComplete: true,
       });
+      createdWorkoutId = workout.id;
 
       // Save all sets to the database
       for (const exercise of exercises) {
@@ -111,10 +130,18 @@ export function LogPastWorkout() {
         }
       }
 
-      navigate('/history');
+      navigate(`/history/${workout.id}`);
     } catch (error) {
       console.error('Failed to save workout:', error);
-      alert('Failed to save workout');
+      if (createdWorkoutId) {
+        try {
+          await workoutApi.delete(createdWorkoutId);
+        } catch (cleanupError) {
+          console.error('Failed to cleanup incomplete past workout save:', cleanupError);
+        }
+      }
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      alert(`Failed to save workout: ${message}`);
     } finally {
       setSaving(false);
     }
@@ -181,7 +208,7 @@ export function LogPastWorkout() {
                 type="date"
                 value={workoutDate}
                 onChange={(e) => setWorkoutDate(e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
+                max={getLocalDateString()}
                 className="input w-full"
               />
             </div>
