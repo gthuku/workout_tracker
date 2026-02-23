@@ -15,6 +15,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [resetToken, setResetToken] = useState('');
 
   // Form fields
   const [username, setUsername] = useState('');
@@ -32,6 +33,23 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
   // Check if there are any users on initial load
   useEffect(() => {
     checkExistingUsers();
+  }, []);
+
+  // If user arrived via email reset link, prefill token and force reset flow.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('resetToken') || params.get('token') || '';
+    if (!token) return;
+
+    // Ensure auth-gated app routes don't interfere.
+    localStorage.removeItem('selectedProfileId');
+
+    setMode('reset-password');
+    setResetToken(token);
+    setPassword('');
+    setConfirmPassword('');
+    setError('');
+    setResetSuccess('');
   }, []);
 
   const checkExistingUsers = async () => {
@@ -152,34 +170,48 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim()) {
-      setError('Please enter your username or email');
-      return;
-    }
-
-    if (!password) {
-      setError('Please enter a new password');
-      return;
-    }
-
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
 
     setSubmitting(true);
     setError('');
     try {
-      const resetRequest = await authApi.requestReset(username.trim());
-      const resetToken = resetRequest.resetToken;
-
       if (!resetToken) {
-        setError('Password reset is unavailable in this environment. Ask an admin to enable reset token delivery.');
+        if (!username.trim()) {
+          setError('Please enter your username or email');
+          return;
+        }
+
+        const resetRequest = await authApi.requestReset(username.trim());
+
+        // Development convenience: if token is returned, allow immediate reset.
+        if (resetRequest.resetToken) {
+          const next = resetRequest.resetToken;
+          setResetToken(next);
+          // Keep token out of server logs; but the client needs it if we're going to reset locally.
+          const url = new URL(window.location.href);
+          url.searchParams.set('resetToken', next);
+          window.history.replaceState(null, '', url.toString());
+          return;
+        }
+
+        setResetSuccess(resetRequest.message || 'If an account exists, reset instructions have been sent.');
+        setUsername('');
+        setTimeout(() => {
+          setResetSuccess('');
+          setMode('login');
+        }, 3000);
+        return;
+      }
+
+      if (!password) {
+        setError('Please enter a new password');
+        return;
+      }
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters');
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
         return;
       }
 
@@ -187,7 +219,13 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
       setResetSuccess(`Password reset successfully for ${result.displayName}!`);
       setPassword('');
       setConfirmPassword('');
-      // After 2 seconds, go back to login
+      setResetToken('');
+      // Remove token from URL after successful use.
+      const url = new URL(window.location.href);
+      url.searchParams.delete('resetToken');
+      url.searchParams.delete('token');
+      window.history.replaceState(null, '', url.toString());
+
       setTimeout(() => {
         setResetSuccess('');
         setMode('login');
@@ -209,6 +247,7 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
     setError('');
     setPendingUser(null);
     setResetSuccess('');
+    setResetToken('');
   };
 
   if (loading) {
@@ -339,63 +378,71 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
               <>
                 <div className="text-center mb-4">
                   <p className="text-slate-400 text-sm">
-                    Enter your username or email and a new password to reset your account.
+                    {resetToken
+                      ? 'Choose a new password for your account.'
+                      : 'Enter your username or email and we will send you a reset link.'}
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Username or Email</label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <input
-                      type="text"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      placeholder="Enter your username or email"
-                      className="input w-full !pl-10"
-                      autoFocus
-                      required
-                    />
+                {!resetToken && (
+                  <div>
+                    <label className="block text-sm text-slate-400 mb-1">Username or Email</label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                      <input
+                        type="text"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        placeholder="Enter your username or email"
+                        className="input w-full !pl-10"
+                        autoFocus
+                        required
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">New Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter new password (min 6 characters)"
-                      className="input w-full !pl-10 !pr-10"
-                      required
-                      minLength={6}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
-                    >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </div>
+                {resetToken && (
+                  <>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">New Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Enter new password (min 6 characters)"
+                          className="input w-full !pl-10 !pr-10"
+                          required
+                          minLength={6}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1">Confirm New Password</label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Confirm new password"
-                      className="input w-full !pl-10"
-                      required
-                    />
-                  </div>
-                </div>
+                    <div>
+                      <label className="block text-sm text-slate-400 mb-1">Confirm New Password</label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Confirm new password"
+                          className="input w-full !pl-10"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <button
                   type="submit"
@@ -405,12 +452,12 @@ export function ProfileSelector({ onProfileSelected }: ProfileSelectorProps) {
                   {submitting ? (
                     <span className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Resetting password...
+                      {resetToken ? 'Resetting password...' : 'Sending reset link...'}
                     </span>
                   ) : (
                     <span className="flex items-center justify-center gap-2">
                       <Lock size={18} />
-                      Reset Password
+                      {resetToken ? 'Reset Password' : 'Send Reset Link'}
                     </span>
                   )}
                 </button>

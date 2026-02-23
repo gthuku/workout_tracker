@@ -73,6 +73,7 @@ export interface Workout {
   name?: string;
   duration?: number;
   notes?: string;
+  photos?: string[];
   isComplete: boolean;
   createdAt: string;
 }
@@ -149,8 +150,27 @@ export interface DashboardData {
   weeklyMuscleGroups: MuscleGroupVolume[];
 }
 
+export interface ProgressCheckin {
+  id: string;
+  userId: string;
+  checkinDate: string;
+  weekStartDate: string;
+  weight: number;
+  waist: number | null;
+  note: string | null;
+  photos: string[];
+  isPrivate: boolean;
+  createdAt: string;
+}
+
 // Squad types
-export type ReactionType = 'fire' | 'clap' | 'eyes';
+export type ReactionType = 'fire' | 'clap' | 'eyes' | 'meme';
+
+export interface MemeReaction {
+  memeUrl: string;
+  reactorName: string;
+  reactorAvatar: string | null;
+}
 
 export interface Squad {
   id: string;
@@ -169,9 +189,31 @@ export interface SquadFeedItem {
   status: 'done' | 'in_progress' | 'not_started';
   activity: string;
   workoutId: string | null;
+  workoutCount?: number;
+  totalVolume?: number;
+  photos?: string[];
   reactions: { fire: number; clap: number; eyes: number };
   hasUserReacted: { fire: boolean; clap: boolean; eyes: boolean };
+  memeReactions: MemeReaction[];
   timestamp: string;
+}
+
+export interface SquadChallenge {
+  id: string;
+  squadId: string;
+  createdBy: string;
+  creatorName: string;
+  exerciseId: string;
+  exerciseName: string;
+  targetSets: number;
+  targetReps: number;
+  targetWeight: number | null;
+  deadline: string;
+  status: 'active' | 'expired';
+  completions: { userId: string; displayName: string; avatar: string | null; completedAt: string }[];
+  hasUserCompleted: boolean;
+  totalMembers: number;
+  createdAt: string;
 }
 
 export interface SquadDashboard {
@@ -183,6 +225,7 @@ export interface SquadDashboard {
   };
   dailyProgress: { completed: number; total: number; percentage: number };
   feed: SquadFeedItem[];
+  challenges?: SquadChallenge[];
 }
 
 export interface SquadInvite {
@@ -224,6 +267,7 @@ export interface SquadWorkout {
   date: string;
   duration: number | null;
   notes: string | null;
+  photos: string[];
   isComplete: boolean;
   createdAt: string;
   sets: SquadWorkoutSet[];

@@ -10,6 +10,9 @@ const instanceType = config.get("instanceType") || "t3.micro";
 const jwtSecret = config.requireSecret("jwtSecret");
 const frontendUrl = config.get("frontendUrl") || "https://wrkoutlog.fit";
 const corsAllowedOrigins = config.get("corsAllowedOrigins") || "https://www.wrkoutlog.fit";
+// Password reset email (SES via AWS CLI on the instance)
+const authEmailFrom = config.get("authEmailFrom") || "";
+const sesRegion = config.get("sesRegion") || "us-east-1";
 
 // Resource naming helper
 const resourceName = (name: string) => `${appName}-${environment}-${name}`;
@@ -164,6 +167,21 @@ new aws.iam.RolePolicy(resourceName("ec2-cloudwatch-policy"), {
   }),
 });
 
+// Allow backend to send password reset emails via SES (AWS CLI uses instance role credentials).
+new aws.iam.RolePolicy(resourceName("ec2-ses-policy"), {
+  role: ec2Role.id,
+  policy: JSON.stringify({
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Effect: "Allow",
+        Action: ["ses:SendEmail", "ses:SendRawEmail"],
+        Resource: "*",
+      },
+    ],
+  }),
+});
+
 // Instance profile
 const instanceProfile = new aws.iam.InstanceProfile(resourceName("ec2-profile"), {
   role: ec2Role.name,
@@ -297,6 +315,8 @@ Environment=DATABASE_PATH=/opt/workout-log/data/workout.db
 Environment=UPLOADS_PATH=/opt/workout-log/uploads
 Environment=FRONTEND_URL=${frontendUrl}
 Environment=CORS_ALLOWED_ORIGINS=${corsAllowedOrigins}
+Environment=AUTH_EMAIL_FROM=${authEmailFrom}
+Environment=AUTH_SES_REGION=${sesRegion}
 Environment=REDIS_URL=redis://127.0.0.1:6379
 Environment=CACHE_ENABLED=true
 Environment=TRUST_PROXY=1

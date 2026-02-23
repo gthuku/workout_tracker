@@ -12,6 +12,20 @@ interface WorkoutWithSets extends RawWorkout {
   sets: (RawWorkoutSet & { exercise_name: string; primaryMuscles: MuscleGroup[] })[];
 }
 
+function parseWorkoutPhotos(photos: string[] | string | undefined): string[] {
+  if (!photos) return [];
+  if (Array.isArray(photos)) return photos.filter((photo): photo is string => typeof photo === 'string');
+  try {
+    const parsed = JSON.parse(photos);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((photo): photo is string => typeof photo === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 export function WorkoutDetail() {
   const { workoutId } = useParams<{ workoutId: string }>();
   const navigate = useNavigate();
@@ -247,6 +261,7 @@ export function WorkoutDetail() {
   }, {} as Record<string, { exerciseId: string; exerciseName: string; primaryMuscles: MuscleGroup[]; sets: typeof workout.sets }>);
 
   const totalVolume = workout.sets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
+  const workoutPhotos = parseWorkoutPhotos(workout.photos);
 
   return (
     <div className="min-h-screen pb-20">
@@ -482,6 +497,23 @@ export function WorkoutDetail() {
             <Plus size={24} />
             Add Exercise
           </button>
+        )}
+
+        {/* Notes */}
+        {workoutPhotos.length > 0 && (
+          <div className="card">
+            <h3 className="font-semibold mb-2">Workout Photos</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {workoutPhotos.map((photo, index) => (
+                <img
+                  key={`${photo.slice(0, 32)}-${index}`}
+                  src={photo}
+                  alt={`Workout photo ${index + 1}`}
+                  className="w-full h-24 rounded-lg object-cover border border-slate-700"
+                />
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Notes */}

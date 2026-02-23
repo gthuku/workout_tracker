@@ -26,7 +26,7 @@ interface WorkoutStore {
   updateSet: (setId: string, reps: number, weight: number) => Promise<void>;
   deleteSet: (setId: string) => Promise<void>;
   updateWorkoutName: (name: string) => Promise<void>;
-  completeWorkout: (notes?: string, name?: string, duration?: number) => Promise<void>;
+  completeWorkout: (notes?: string, name?: string, duration?: number, photos?: string[]) => Promise<void>;
   discardWorkout: () => Promise<void>;
   updateWorkoutTimer: (elapsedSeconds: number) => void;
   clearError: () => void;
@@ -316,7 +316,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
     }
   },
 
-  completeWorkout: async (notes?: string, name?: string, duration?: number) => {
+  completeWorkout: async (notes?: string, name?: string, duration?: number, photos?: string[]) => {
     const { activeWorkout } = get();
     if (!activeWorkout) return;
 
@@ -326,6 +326,7 @@ export const useWorkoutStore = create<WorkoutStore>((set, get) => ({
         notes,
         name: name || activeWorkout.name,
         duration,
+        photos,
       });
 
       set({

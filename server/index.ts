@@ -8,7 +8,7 @@ import logger from './utils/logger.js';
 import cache from './utils/cache.js';
 import { requestIdMiddleware } from './middleware/requestId.js';
 import { errorHandler, asyncHandler, UnauthorizedError, ForbiddenError } from './middleware/errorHandler.js';
-import { authService, userService, workoutService, exerciseService, statsService, squadService } from './services/index.js';
+import { authService, userService, workoutService, exerciseService, statsService, squadService, progressService, pushService } from './services/index.js';
 import {
   RegisterSchema,
   LoginSchema,
@@ -32,6 +32,12 @@ import {
   MuscleGroupsQuerySchema,
   PaginationSchema,
   PRTrendsQuerySchema,
+  CreateProgressCheckinSchema,
+  ProgressCheckinQuerySchema,
+  SavePushSubscriptionSchema,
+  RemovePushSubscriptionSchema,
+  ScheduleRestTimerNotificationSchema,
+  TimerIdParamSchema,
   CreateSquadSchema,
   InviteUserSchema,
   RespondInviteSchema,
@@ -39,6 +45,7 @@ import {
   JoinSquadSchema,
   UserSearchSchema,
   SquadDashboardQuerySchema,
+  CreateChallengeSchema,
 } from './schemas/index.js';
 
 // ============ CORS CONFIGURATION ============
@@ -444,6 +451,47 @@ v1Router.get('/personal-records', requireAuth, asyncHandler(async (req, res) => 
   res.json(prs);
 }));
 
+v1Router.get('/progress-checkins', requireAuth, asyncHandler(async (req, res) => {
+  ProgressCheckinQuerySchema.parse(req.query);
+  const checkins = await progressService.list(getUserId(req));
+  res.json(checkins);
+}));
+
+v1Router.post('/progress-checkins', requireAuth, asyncHandler(async (req, res) => {
+  const input = CreateProgressCheckinSchema.parse(req.body);
+  const checkin = await progressService.create(getUserId(req), input);
+  res.status(201).json(checkin);
+}));
+
+v1Router.get('/push/public-key', requireAuth, asyncHandler(async (_req, res) => {
+  const config = pushService.getPublicConfig();
+  res.json(config);
+}));
+
+v1Router.post('/push/subscriptions', requireAuth, asyncHandler(async (req, res) => {
+  const input = SavePushSubscriptionSchema.parse(req.body);
+  const result = await pushService.saveSubscription(getUserId(req), input);
+  res.status(201).json(result);
+}));
+
+v1Router.delete('/push/subscriptions', requireAuth, asyncHandler(async (req, res) => {
+  const { endpoint } = RemovePushSubscriptionSchema.parse(req.body);
+  const result = await pushService.removeSubscription(getUserId(req), endpoint);
+  res.json(result);
+}));
+
+v1Router.post('/push/rest-timers', requireAuth, asyncHandler(async (req, res) => {
+  const input = ScheduleRestTimerNotificationSchema.parse(req.body);
+  const result = await pushService.scheduleRestTimerNotification(getUserId(req), input);
+  res.status(201).json(result);
+}));
+
+v1Router.delete('/push/rest-timers/:timerId', requireAuth, asyncHandler(async (req, res) => {
+  const { timerId } = TimerIdParamSchema.parse(req.params);
+  const result = await pushService.cancelRestTimerNotification(getUserId(req), timerId);
+  res.json(result);
+}));
+
 // --- Squads ---
 v1Router.get('/squads/invites', requireAuth, asyncHandler(async (req, res) => {
   const invites = await squadService.listInvites(getUserId(req));
@@ -464,14 +512,24 @@ v1Router.get('/squads/users/search', requireAuth, asyncHandler(async (req, res) 
 }));
 
 v1Router.post('/squads/reactions', requireAuth, asyncHandler(async (req, res) => {
-  const { workoutId, reactionType } = AddReactionSchema.parse(req.body);
-  const result = await squadService.addReaction(getUserId(req), workoutId, reactionType);
+  const { workoutId, reactionType, memeUrl } = AddReactionSchema.parse(req.body);
+  const result = await squadService.addReaction(getUserId(req), workoutId, reactionType, memeUrl);
   res.json(result);
 }));
 
 v1Router.delete('/squads/reactions', requireAuth, asyncHandler(async (req, res) => {
-  const { workoutId, reactionType } = AddReactionSchema.parse(req.body);
-  const result = await squadService.removeReaction(getUserId(req), workoutId, reactionType);
+  const { workoutId, reactionType, memeUrl } = AddReactionSchema.parse(req.body);
+  const result = await squadService.removeReaction(getUserId(req), workoutId, reactionType, memeUrl);
+  res.json(result);
+}));
+
+v1Router.post('/squads/challenges/:id/complete', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.completeChallenge(getUserId(req), req.params.id as string);
+  res.json(result);
+}));
+
+v1Router.delete('/squads/challenges/:id', requireAuth, asyncHandler(async (req, res) => {
+  const result = await squadService.deleteChallenge(getUserId(req), req.params.id as string);
   res.json(result);
 }));
 
@@ -498,9 +556,15 @@ v1Router.post('/squads', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 v1Router.get('/squads/:id/dashboard', requireAuth, asyncHandler(async (req, res) => {
-  const { timezone } = SquadDashboardQuerySchema.parse(req.query);
-  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string, timezone);
+  const { timezone, period, date } = SquadDashboardQuerySchema.parse(req.query);
+  const dashboard = await squadService.getSquadDashboard(getUserId(req), req.params.id as string, timezone, period, date);
   res.json(dashboard);
+}));
+
+v1Router.post('/squads/:id/challenges', requireAuth, asyncHandler(async (req, res) => {
+  const input = CreateChallengeSchema.parse(req.body);
+  const result = await squadService.createChallenge(getUserId(req), req.params.id as string, input);
+  res.status(201).json(result);
 }));
 
 v1Router.post('/squads/:id/invite', requireAuth, asyncHandler(async (req, res) => {
@@ -543,6 +607,7 @@ async function startServer() {
 
     // Initialize Redis cache (non-blocking, continues if Redis unavailable)
     await cache.connect();
+    await pushService.startWorker();
 
     // Cleanup old incomplete workouts
     await workoutService.cleanupIncomplete();
@@ -550,6 +615,7 @@ async function startServer() {
     // Graceful shutdown handlers
     const shutdown = async (signal: string) => {
       logger.info({ signal }, 'Shutting down gracefully...');
+      await pushService.stopWorker();
       await cache.disconnect();
       await closeDatabase();
       process.exit(0);

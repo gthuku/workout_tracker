@@ -46,7 +46,7 @@ export function SquadWorkoutDetail() {
     return (
       <div className="p-4 text-center">
         <p className="text-zinc-400">Workout not found</p>
-        <button onClick={() => navigate('/squad')} className="btn btn-secondary mt-4">
+        <button onClick={() => navigate(-1)} className="btn btn-secondary mt-4">
           Back to Squad
         </button>
       </div>
@@ -76,7 +76,7 @@ export function SquadWorkoutDetail() {
       <header className="sticky top-0 bg-[#0a0a0a] border-b border-zinc-800 p-4 z-10">
         <div className="max-w-lg mx-auto">
           <div className="flex items-center gap-3 mb-2">
-            <button onClick={() => navigate('/squad')} className="p-2 -ml-2 text-zinc-400 hover:text-white">
+            <button onClick={() => navigate(-1)} className="p-2 -ml-2 text-zinc-400 hover:text-white">
               <ChevronLeft size={24} />
             </button>
             <span className="text-xs text-zinc-500 bg-zinc-800 px-2 py-1 rounded-full">
@@ -120,7 +120,51 @@ export function SquadWorkoutDetail() {
           </div>
         </div>
 
-        {/* Exercises */}
+        {/* Workout Photos */}
+        {workout.photos.length > 0 && (
+          <div className="card">
+            <h3 className="font-semibold mb-2">Workout Photos</h3>
+            <div className="grid grid-cols-3 gap-2">
+              {workout.photos.map((photo, index) => (
+                <img
+                  key={`${photo.slice(0, 32)}-${index}`}
+                  src={photo}
+                  alt={`Workout photo ${index + 1}`}
+                  className="w-full h-24 rounded-lg object-cover border border-zinc-700"
+                />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Performed Order */}
+        <div className="card">
+          <h3 className="font-semibold mb-3">Performed Order</h3>
+          {workout.sets.length === 0 ? (
+            <p className="text-sm text-zinc-500">No sets logged.</p>
+          ) : (
+            <div className="space-y-2">
+              {workout.sets.map((set, index) => (
+                <div key={set.id} className="flex items-center justify-between p-2 bg-zinc-800/50 rounded-lg">
+                  <div className="flex items-center gap-3">
+                    <span className="w-7 h-7 bg-zinc-700 rounded-full flex items-center justify-center text-xs font-bold">
+                      {index + 1}
+                    </span>
+                    <div>
+                      <p className="font-medium text-sm">{set.exerciseName}</p>
+                      <p className="text-xs text-zinc-400">
+                        {set.duration ? `${set.duration} min` : `${set.weight} lbs x ${set.reps}`}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs text-zinc-500">Set {set.setNumber}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Exercise Breakdown */}
         {Object.entries(exerciseGroups).map(([exerciseId, data]) => {
           const exerciseVolume = data.sets.reduce((acc, s) => acc + (s.reps || 0) * (s.weight || 0), 0);
 

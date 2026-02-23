@@ -12,6 +12,7 @@ interface DbWorkout {
   date: string;
   duration?: number;
   notes?: string;
+  photos?: string | null;
   is_complete: number;
   created_at: string;
 }
@@ -21,10 +22,24 @@ interface DbWorkoutSet {
   workout_id: string;
   exercise_id: string;
   set_number: number;
+  performed_at_ms?: number | null;
   reps?: number;
   weight?: number;
   duration?: number;
   created_at: string;
+}
+
+function parseWorkoutPhotos(value?: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((photo): photo is string => typeof photo === 'string');
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export const workoutService = {
@@ -76,7 +91,7 @@ export const workoutService = {
        FROM workout_sets ws
        JOIN exercises e ON ws.exercise_id = e.id
        WHERE ws.workout_id = $1
-       ORDER BY ws.set_number`,
+       ORDER BY COALESCE(ws.performed_at_ms, 0) ASC, ws.created_at ASC, ws.set_number ASC, ws.id ASC`,
       [workout.id]
     );
 
@@ -87,6 +102,7 @@ export const workoutService = {
       name: workout.name,
       duration: workout.duration,
       notes: workout.notes,
+      photos: parseWorkoutPhotos(workout.photos),
       isComplete: false,
       createdAt: workout.created_at,
       sets: sets.map((s) => ({
@@ -125,7 +141,7 @@ export const workoutService = {
        FROM workout_sets ws
        JOIN exercises e ON ws.exercise_id = e.id
        WHERE ws.workout_id = $1
-       ORDER BY ws.set_number`,
+       ORDER BY COALESCE(ws.performed_at_ms, 0) ASC, ws.created_at ASC, ws.set_number ASC, ws.id ASC`,
       [workoutId]
     );
 
@@ -136,6 +152,7 @@ export const workoutService = {
       name: workout.name,
       duration: workout.duration,
       notes: workout.notes,
+      photos: parseWorkoutPhotos(workout.photos),
       isComplete: workout.is_complete,
       createdAt: workout.created_at,
       sets: sets.map((s) => ({
@@ -186,7 +203,7 @@ export const workoutService = {
       throw new ForbiddenError('Access denied');
     }
 
-    const { name, date, notes, isComplete, duration } = input;
+    const { name, date, notes, isComplete, duration, photos } = input;
     const updates: string[] = [];
     const params: unknown[] = [];
     let paramIndex = 1;
@@ -214,6 +231,11 @@ export const workoutService = {
     if (duration !== undefined) {
       updates.push(`duration = $${paramIndex}`);
       params.push(duration);
+      paramIndex++;
+    }
+    if (photos !== undefined) {
+      updates.push(`photos = $${paramIndex}`);
+      params.push(JSON.stringify(photos));
       paramIndex++;
     }
 
@@ -309,12 +331,13 @@ export const workoutService = {
 
     const { exerciseId, setNumber, reps, weight, duration } = input;
     const id = uuidv4();
+    const performedAtMs = Date.now();
 
     await db.withTransaction(async () => {
       await db.execute(
-        `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, reps, weight, duration)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [id, workoutId, exerciseId, setNumber, reps ?? null, weight ?? null, duration ?? null]
+        `INSERT INTO workout_sets (id, workout_id, exercise_id, set_number, performed_at_ms, reps, weight, duration)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [id, workoutId, exerciseId, setNumber, performedAtMs, reps ?? null, weight ?? null, duration ?? null]
       );
 
       if (reps && weight) {
